@@ -64,6 +64,16 @@ class CompanyService {
 
     return company;
   }
+
+  async setVerificationStatus(id, approved, verifiedBy) {
+    const company = await companyRepository.update(id, {
+      verificationStatus: approved ? "verified" : "rejected",
+      verifiedBy,
+      verifiedAt: new Date(),
+    });
+    if (!company) throw new Error("Company not found");
+    return company;
+  }
 }
 
 module.exports = new CompanyService();

@@ -74,6 +74,19 @@ class CompanyController {
       return errorResponse(res, error.message, 404);
     }
   }
+
+  async verify(req, res) {
+    try {
+      const company = await companyService.setVerificationStatus(
+        req.params.id,
+        req.body.approved,
+        req.user._id,
+      );
+      return successResponse(res, "Company verification updated", company);
+    } catch (error) {
+      return errorResponse(res, error.message, 404);
+    }
+  }
 }
 
 module.exports = new CompanyController();

@@ -178,7 +178,7 @@ router.get(
  *       403: { description: Insufficient permissions }
  *       404: { description: Employee not found }
  */
-router.put(
+router.patch(
   "/:id",
   authenticate,
   authorize("super_admin", "admin", "hr"),

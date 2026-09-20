@@ -1,25 +1,44 @@
 const mongoose = require("mongoose");
 const Company = require("../models/company.model");
 const User = require("../models/user.model");
-const bcrypt = require("bcryptjs");
 
 class CompanyRepository {
   async findAll(searchHelper) {
     const filters = searchHelper.getFilters();
 
-    const [data, total] = await Promise.all([
+    const [companies, total] = await Promise.all([
       Company.find(filters)
         .sort(searchHelper.getSort())
         .skip(searchHelper.getSkip())
-        .limit(searchHelper.getLimit()),
+        .limit(searchHelper.getLimit())
+        .populate("planId", "name") // add more fields here if needed, e.g. "name price"
+        .lean(),
 
       Company.countDocuments(filters),
     ]);
 
-    return {
-      data,
-      total,
-    };
+    // One grouped query for all companies on this page (no N+1).
+    const companyIds = companies.map((c) => c._id);
+    const counts = await User.aggregate([
+      { $match: { companyId: { $in: companyIds } } },
+      // Optional: only count active users -> add `isActive: true` to $match
+      { $group: { _id: "$companyId", count: { $sum: 1 } } },
+    ]);
+
+    const countMap = new Map(counts.map((c) => [String(c._id), c.count]));
+
+    const data = companies.map((c) => {
+      const plan = c.planId && typeof c.planId === "object" ? c.planId : null;
+      return {
+        ...c,
+        // keep planId as a plain id so the edit form keeps working
+        planId: plan ? plan._id : c.planId,
+        plan: plan ? { _id: plan._id, name: plan.name } : null,
+        userCount: countMap.get(String(c._id)) || 0,
+      };
+    });
+
+    return { data, total };
   }
 
   async findById(id) {
@@ -37,12 +56,10 @@ class CompanyRepository {
   async createWithAdmin({ companyData, adminData }) {
     const companyId = new mongoose.Types.ObjectId();
 
-    const hashedPassword = await bcrypt.hash(adminData.password, 12);
+    // Pass the PLAIN password: the User model's pre("save") hook hashes it
+    // exactly once. Hashing here as well would double-hash it and break login.
     const adminUser = await User.create({
       ...adminData,
-
-      password: hashedPassword,
-
       role: "admin",
       companyId,
     });

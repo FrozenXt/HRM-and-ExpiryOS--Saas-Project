@@ -374,7 +374,7 @@ router.get(
  *       404:
  *         description: User not found
  */
-router.put(
+router.patch(
   "/:id",
   authenticate,
   authorize("super_admin", "admin"),

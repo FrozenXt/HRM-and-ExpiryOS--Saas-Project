@@ -491,13 +491,65 @@ router.get(
  *       404:
  *         description: Company not found
  */
-router.put(
+router.patch(
   "/:id",
   authenticate,
   authorize("super_admin"),
   companyController.update,
 );
 
+/**
+ * @openapi
+ * /api/v1/companies/{id}/verification:
+ *   patch:
+ *     summary: Approve or reject company verification
+ *     description: Set a company's verification status. Super Admin only.
+ *     tags:
+ *       - Companies
+ *     security:
+ *       - bearerAuth: []
+ *
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         description: Company MongoDB ObjectId
+ *         schema:
+ *           type: string
+ *           example: 68ba1234567890abcdef1234
+ *
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - approved
+ *             properties:
+ *               approved:
+ *                 type: boolean
+ *                 example: true
+ *
+ *     responses:
+ *       200:
+ *         description: Company verification updated
+ *
+ *       401:
+ *         description: Authentication required or invalid access token
+ *
+ *       403:
+ *         description: Insufficient permissions
+ *
+ *       404:
+ *         description: Company not found
+ */
+router.patch(
+  "/:id/verification",
+  authenticate,
+  authorize("super_admin"),
+  companyController.verify,
+);
 /**
  * @openapi
  * /api/v1/companies/{id}:
