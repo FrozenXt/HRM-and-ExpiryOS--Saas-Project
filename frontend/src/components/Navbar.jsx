@@ -1,6 +1,16 @@
-import React from "react";
+import React, { useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Icon } from "./Icon";
 import { useTheme } from "../context/ThemeContext";
+import {
+  getCurrentUser,
+  saveUser,
+  logout,
+  displayName,
+  displayInitials,
+  roleLabel,
+  fetchCurrentUserProfile,
+} from "../utils/auth";
 
 const SunIcon = () => (
   <svg
@@ -34,6 +44,48 @@ const MoonIcon = () => (
 
 export default function Navbar({ onToggleSidebar }) {
   const { theme, toggleTheme } = useTheme();
+  const navigate = useNavigate();
+
+  const [user, setUser] = useState(() => getCurrentUser());
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef(null);
+
+  // The JWT only carries id/role. If we have no name yet (e.g. login didn't
+  // save the user), load the profile once and cache it.
+  useEffect(() => {
+    if (!user || user.firstName || !user.id) return;
+    fetchCurrentUserProfile(user.id)
+      .then((profile) => {
+        const full = { ...user, ...profile, id: profile._id || user.id };
+        saveUser(full);
+        setUser(full);
+      })
+      .catch(() => {
+        /* keep showing the email/role fallback */
+      });
+  }, [user]);
+
+  // Close the menu on outside click / Escape.
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onClick = (e) => {
+      if (menuRef.current && !menuRef.current.contains(e.target))
+        setMenuOpen(false);
+    };
+    const onKey = (e) => e.key === "Escape" && setMenuOpen(false);
+    document.addEventListener("mousedown", onClick);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onClick);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [menuOpen]);
+
+  const handleLogout = async () => {
+    setMenuOpen(false);
+    await logout();
+    navigate("/login", { replace: true });
+  };
 
   return (
     <header className="topbar">
@@ -69,13 +121,43 @@ export default function Navbar({ onToggleSidebar }) {
           <span className="notif-dot">5</span>
         </button>
 
-        <div className="profile">
-          <div className="avatar">SA</div>
-          <div className="profile-text">
-            <div className="profile-name">Sujan Adhikari</div>
-            <div className="profile-role">Super Admin</div>
-          </div>
-          <Icon name="chevronDown" size={14} />
+        <div className="profile-wrap" ref={menuRef}>
+          <button
+            type="button"
+            className="profile"
+            onClick={() => setMenuOpen((o) => !o)}
+            aria-haspopup="menu"
+            aria-expanded={menuOpen}
+          >
+            <div className="avatar">{displayInitials(user)}</div>
+            <div className="profile-text">
+              <div className="profile-name">{displayName(user)}</div>
+              <div className="profile-role">{roleLabel(user?.role)}</div>
+            </div>
+            <Icon name="chevronDown" size={14} />
+          </button>
+
+          {menuOpen && (
+            <div className="profile-menu" role="menu">
+              <div className="profile-menu-head">
+                <div className="profile-name">{displayName(user)}</div>
+                {user?.email && (
+                  <div className="profile-role">{user.email}</div>
+                )}
+                <span className="badge plan-business" style={{ marginTop: 8 }}>
+                  {roleLabel(user?.role)}
+                </span>
+              </div>
+              <button
+                type="button"
+                className="profile-menu-item danger"
+                onClick={handleLogout}
+                role="menuitem"
+              >
+                <Icon name="chevronLeft" size={14} /> Log out
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </header>

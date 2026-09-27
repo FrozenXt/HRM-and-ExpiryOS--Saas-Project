@@ -11,6 +11,28 @@ import DocumentTypes from "./pages/DocumentTypes";
 import Designations from "./pages/Designations";
 import Departments from "./pages/Departments";
 import Employees from "./pages/Employees";
+import Attendance from "./pages/Attendance";
+import CompanyDetails from "./pages/CompanyDetails";
+import LeaveTypes from "./pages/LeaveTypes";
+import LeaveRequests from "./pages/LeaveRequests";
+import LeaveBalances from "./pages/LeaveBalances";
+import CompanyDocuments from "./pages/CompanyDocuments";
+import Settings from "./pages/Settings";
+import Currencies from "./pages/Currencies";
+import SalaryStructures from "./pages/Salaries";
+import Payroll from "./pages/Payroll";
+import StatutoryRules from "./pages/StatutoryRules";
+import JobPostings from "./pages/JobPostings";
+import Holidays from "./pages/Holidays";
+import TimeLogs from "./pages/TimeLogs";
+import EmployeeDetail from "./pages/EmployeeDetail";
+import CompanyOverview from "./pages/CompanyOverview";
+import Documents from "./pages/Documents";
+import Events from "./pages/Events";
+import Announcements from "./pages/Announcements";
+import StatutoryDetails from "./pages/StatutoryDetails";
+import Assets from "./pages/Assets";
+import AssetAssignments from "./pages/AssetAssignments";
 
 function App() {
   return (
@@ -28,6 +50,28 @@ function App() {
         <Route path="/designations" element={<Designations />} />
         <Route path="/departments" element={<Departments />} />
         <Route path="/employees" element={<Employees />} />
+        <Route path="/attendance" element={<Attendance />} />
+        <Route path="/companies/:id" element={<CompanyDetails />} />
+        <Route path="/leave-types" element={<LeaveTypes />} />
+        <Route path="/leave-requests" element={<LeaveRequests />} />
+        <Route path="/leave-balances" element={<LeaveBalances />} />
+        <Route path="/company-documents" element={<CompanyDocuments />} />
+        <Route path="/system-settings" element={<Settings />} />
+        <Route path="/currencies" element={<Currencies />} />
+        <Route path="/salary-structures" element={<SalaryStructures />} />
+        <Route path="/payroll" element={<Payroll />} />
+        <Route path="/statutory-rules" element={<StatutoryRules />} />
+        <Route path="/job-postings" element={<JobPostings />} />
+        <Route path="/holidays" element={<Holidays />} />
+        <Route path="/time-logs" element={<TimeLogs />} />
+        <Route path="/employees/:id" element={<EmployeeDetail />} />
+        <Route path="/company" element={<CompanyOverview />} />
+        <Route path="/documents" element={<Documents />} />
+        <Route path="/events" element={<Events />} />
+        <Route path="/announcements" element={<Announcements />} />
+        <Route path="/statutory-details" element={<StatutoryDetails />} />
+        <Route path="/assets" element={<Assets />} />
+        <Route path="/asset-assignments" element={<AssetAssignments />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

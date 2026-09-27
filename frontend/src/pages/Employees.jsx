@@ -8,6 +8,7 @@ import {
   deleteEmployee,
   listOptions,
 } from "../services/employeeService";
+import { useNavigate } from "react-router-dom";
 
 const AVATAR_COLORS = [
   "#3b82f6",
@@ -46,6 +47,7 @@ const byId = (rows) => Object.fromEntries(rows.map((r) => [r._id, r]));
 
 export default function Employees() {
   const superAdmin = isSuperAdmin();
+  const navigate = useNavigate();
   const [employees, setEmployees] = useState([]);
   const [pagination, setPagination] = useState({
     page: 1,
@@ -217,10 +219,7 @@ export default function Employees() {
         </button>
       </div>
 
-      <div
-        className="stat-grid"
-        style={{ gridTemplateColumns: "repeat(3, 1fr)" }}
-      >
+      <div className="stat-grid">
         <StatCard
           tone="blue"
           icon="users"
@@ -344,6 +343,12 @@ export default function Employees() {
                       </td>
                       <td>
                         <div style={{ display: "flex", gap: 8 }}>
+                          <button
+                            className="btn btn-sm"
+                            onClick={() => navigate(`/employees/${e._id}`)}
+                          >
+                            <Icon name="eye" size={13} /> View
+                          </button>
                           <button
                             className="btn btn-sm"
                             onClick={() => openEdit(e)}

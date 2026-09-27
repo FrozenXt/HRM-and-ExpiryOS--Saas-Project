@@ -1,42 +1,126 @@
 import React, { useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { Icon } from "./Icon";
+import { getCurrentUser } from "../utils/auth";
+import { useBranding } from "../context/BrandingContext";
 
-// Flat items shown directly under the "SUPER ADMIN" label.
+/* ---------- nav config (unchanged) ---------- */
+
 const TOP_ITEMS = [
-  { id: "dashboard", label: "Dashboard", icon: "grid", path: "/dashboard" },
-  { id: "companies", label: "Companies", icon: "building", path: "/companies" },
-  { id: "users", label: "Users", icon: "users", path: "/users" },
-  { id: "plans", label: "Plans & Subscriptions", icon: "list", path: "/plans" },
+  {
+    id: "dashboard",
+    label: "Dashboard",
+    icon: "grid",
+    path: "/dashboard",
+    roles: ["super_admin", "admin", "hr", "staff"],
+  },
+  {
+    id: "companies",
+    label: "Companies",
+    icon: "building",
+    path: "/companies",
+    roles: ["super_admin"],
+  },
+  {
+    id: "my-company",
+    label: "My Company",
+    icon: "building",
+    path: "/company",
+    roles: ["admin", "hr", "staff"],
+  },
+  {
+    id: "users",
+    label: "Users",
+    icon: "users",
+    path: "/users",
+    roles: ["super_admin"],
+  },
+  {
+    id: "plans",
+    label: "Plans & Subscriptions",
+    icon: "list",
+    path: "/plans",
+    roles: ["super_admin"],
+  },
   {
     id: "system-settings",
     label: "System Settings",
     icon: "settings",
     path: "/system-settings",
+    roles: ["super_admin", "admin"],
   },
 ];
 
-// Collapsible groups shown under "MANAGEMENT" — each maps to modules you've
-// already built on the backend.
 const MANAGEMENT_GROUPS = [
   {
     id: "hr-management",
     label: "HR Management",
     icon: "briefcase",
     items: [
-      { id: "departments", label: "Departments", path: "/departments" },
-      { id: "designations", label: "Designations", path: "/designations" },
+      {
+        id: "departments",
+        label: "Departments",
+        icon: "folder",
+        path: "/departments",
+        roles: ["super_admin", "admin", "hr"],
+      },
+      {
+        id: "designations",
+        label: "Designations",
+        icon: "badge",
+        path: "/designations",
+        roles: ["super_admin", "admin", "hr"],
+      },
       {
         id: "document-types",
         label: "Document Types",
+        icon: "fileText",
         path: "/document-types",
+        roles: ["super_admin", "admin", "hr"],
+      },
+      {
+        id: "documents",
+        label: "Documents",
+        icon: "file",
+        path: "/documents",
+        roles: ["super_admin", "admin", "hr", "staff"],
       },
       {
         id: "company-documents",
         label: "Company Documents",
+        icon: "building",
         path: "/company-documents",
+        roles: ["super_admin", "admin", "hr"],
       },
-      { id: "employees", label: "Employees", path: "/employees" },
+      {
+        id: "employees",
+        label: "Employees",
+        icon: "users",
+        path: "/employees",
+        roles: ["super_admin", "admin", "hr"],
+      },
+    ],
+  },
+  {
+    id: "engagement",
+    label: "Events & Engagement",
+    icon: "calendar",
+    roles: ["super_admin", "admin", "hr"],
+    items: [
+      {
+        id: "events",
+        label: "Events",
+        icon: "calendar",
+        path: "/events",
+        roles: ["super_admin", "admin", "hr"],
+      },
+      {
+        id: "announcements",
+        label: "Announcements",
+        icon: "bell",
+        path: "/announcements",
+        roles: ["super_admin", "admin", "hr", "staff"],
+      },
     ],
   },
   {
@@ -47,12 +131,16 @@ const MANAGEMENT_GROUPS = [
       {
         id: "attendance-records",
         label: "Attendance Records",
+        icon: "clock",
         path: "/attendance",
+        roles: ["super_admin", "admin", "hr", "staff"],
       },
       {
         id: "regularization",
         label: "Regularization Requests",
+        icon: "edit",
         path: "/regularization-requests",
+        roles: ["super_admin", "admin", "hr"],
       },
     ],
   },
@@ -61,18 +149,34 @@ const MANAGEMENT_GROUPS = [
     label: "Leave Management",
     icon: "calendar",
     items: [
-      { id: "leave-types", label: "Leave Types", path: "/leave-types" },
+      {
+        id: "leave-types",
+        label: "Leave Types",
+        icon: "list",
+        path: "/leave-types",
+        roles: ["super_admin", "admin", "hr"],
+      },
       {
         id: "leave-requests",
         label: "Leave Requests",
+        icon: "calendar",
         path: "/leave-requests",
+        roles: ["super_admin", "admin", "hr", "staff"],
       },
       {
         id: "leave-balances",
         label: "Leave Balances",
+        icon: "pieChart",
         path: "/leave-balances",
+        roles: ["super_admin", "admin", "hr", "staff"],
       },
-      { id: "holidays", label: "Holidays", path: "/holidays" },
+      {
+        id: "holidays",
+        label: "Holidays",
+        icon: "sun",
+        path: "/holidays",
+        roles: ["super_admin", "admin", "hr", "staff"],
+      },
     ],
   },
   {
@@ -83,16 +187,80 @@ const MANAGEMENT_GROUPS = [
       {
         id: "salary-structures",
         label: "Salary Structures",
+        icon: "dollar",
         path: "/salary-structures",
+        roles: ["super_admin", "admin", "hr"],
       },
-      { id: "payroll-records", label: "Payroll", path: "/payroll" },
-      { id: "time-logs", label: "Time Logs", path: "/time-logs" },
+      {
+        id: "payroll-records",
+        label: "Payroll",
+        icon: "card",
+        path: "/payroll",
+        roles: ["super_admin", "admin", "hr", "staff"],
+      },
+      {
+        id: "time-logs",
+        label: "Time Logs",
+        icon: "clock",
+        path: "/time-logs",
+        roles: ["super_admin", "admin", "hr", "staff"],
+      },
       {
         id: "statutory-rules",
         label: "Statutory Rules",
+        icon: "shield",
         path: "/statutory-rules",
+        roles: ["super_admin", "admin"],
       },
-      { id: "currencies", label: "Currencies", path: "/currencies" },
+      {
+        id: "statutory-details",
+        label: "Statutory Details",
+        icon: "clipboard",
+        path: "/statutory-details",
+        roles: ["super_admin", "admin"],
+      },
+      {
+        id: "currencies",
+        label: "Currencies",
+        icon: "globe",
+        path: "/currencies",
+        roles: ["super_admin", "admin"],
+      },
+    ],
+  },
+  {
+    id: "hiring",
+    label: "Hiring",
+    icon: "userPlus",
+    items: [
+      {
+        id: "job-postings",
+        label: "Job Postings",
+        icon: "userPlus",
+        path: "/job-postings",
+        roles: ["super_admin", "admin", "hr"],
+      },
+    ],
+  },
+  {
+    id: "assets",
+    label: "Assets",
+    icon: "briefcase",
+    items: [
+      {
+        id: "asset-inventory",
+        label: "Asset Inventory",
+        icon: "briefcase",
+        path: "/assets",
+        roles: ["super_admin", "admin", "hr"],
+      },
+      {
+        id: "asset-assignments",
+        label: "Asset Assignments",
+        icon: "userPlus",
+        path: "/asset-assignments",
+        roles: ["super_admin", "admin", "hr", "staff"],
+      },
     ],
   },
   {
@@ -103,17 +271,23 @@ const MANAGEMENT_GROUPS = [
       {
         id: "global-reports",
         label: "Global Reports",
+        icon: "barChart",
         path: "/reports/global",
+        roles: ["super_admin"],
       },
       {
         id: "company-reports",
         label: "Company Reports",
+        icon: "trending",
         path: "/reports/companies",
+        roles: ["super_admin", "admin", "hr"],
       },
       {
         id: "employee-reports",
         label: "Employee Reports",
+        icon: "activity",
         path: "/reports/employees",
+        roles: ["super_admin", "admin", "hr"],
       },
     ],
   },
@@ -129,13 +303,34 @@ const SUPPORT_ITEMS = [
   },
 ];
 
+/* ---------- component ---------- */
+
 export default function Sidebar({ open, onClose }) {
   const navigate = useNavigate();
   const location = useLocation();
+  const role = getCurrentUser()?.role || "staff"; // fail-closed: unknown user gets the most restricted view
 
-  // Auto-expand whichever group contains the current route.
+  const { companyName, logoFullUrl, loading: brandingLoading } = useBranding();
+
+  const isSuperAdmin = role === "super_admin";
+  const showLogo = !isSuperAdmin && !!logoFullUrl;
+  const brandName = isSuperAdmin ? "WorkPulse" : companyName || "WorkPulse";
+  const brandSub = isSuperAdmin
+    ? "HR Management System"
+    : companyName
+      ? "HR Portal"
+      : "HR Management System";
+
+  const canSee = (roles) => !roles || roles.includes(role);
+
+  const visibleTopItems = TOP_ITEMS.filter((item) => canSee(item.roles));
+  const visibleGroups = MANAGEMENT_GROUPS.map((group) => ({
+    ...group,
+    items: group.items.filter((it) => canSee(it.roles)),
+  })).filter((group) => group.items.length > 0);
+
   const [expanded, setExpanded] = useState(() => {
-    const match = MANAGEMENT_GROUPS.find((g) =>
+    const match = visibleGroups.find((g) =>
       g.items.some((it) => location.pathname.startsWith(it.path)),
     );
     return match ? { [match.id]: true } : {};
@@ -145,6 +340,10 @@ export default function Sidebar({ open, onClose }) {
     setExpanded((prev) => ({ ...prev, [id]: !prev[id] }));
 
   const go = (path) => {
+    if (!path) {
+      console.error("Sidebar: nav item is missing a path", path);
+      return;
+    }
     navigate(path);
     onClose?.();
   };
@@ -154,83 +353,116 @@ export default function Sidebar({ open, onClose }) {
       {open && <div className="sidebar-overlay" onClick={onClose} />}
 
       <aside className={`sidebar ${open ? "open" : ""}`}>
+        {/* ---------- brand / company logo ---------- */}
         <div className="sidebar-brand">
-          <div className="brand-mark">
+          {showLogo ? (
+            <img
+              src={logoFullUrl}
+              alt={brandName}
+              className="brand-logo"
+              onError={(e) => {
+                // If the image fails, hide it and reveal the fallback mark.
+                e.currentTarget.style.display = "none";
+                const sib = e.currentTarget.nextElementSibling;
+                if (sib) sib.style.display = "grid";
+              }}
+            />
+          ) : null}
+
+          <div
+            className="brand-mark"
+            style={{ display: showLogo ? "none" : "grid" }}
+          >
             <Icon name="hash" size={20} />
           </div>
-          <div>
-            <div className="brand-name">WorkPulse</div>
-            <div className="brand-sub">HR Management System</div>
+
+          <div style={{ minWidth: 0 }}>
+            <div className="brand-name" title={brandName}>
+              {brandingLoading && !isSuperAdmin ? "Loading…" : brandName}
+            </div>
+            <div className="brand-sub" title={brandSub}>
+              {brandSub}
+            </div>
           </div>
         </div>
 
+        {/* ---------- nav ---------- */}
         <nav className="sidebar-nav">
-          <div className="nav-section">
-            <div className="nav-section-title">SUPER ADMIN</div>
-            {TOP_ITEMS.map((item) => {
-              const isActive = location.pathname === item.path;
-              return (
-                <button
-                  key={item.id}
-                  className={`nav-item ${isActive ? "active" : ""}`}
-                  onClick={() => go(item.path)}
-                >
-                  <Icon name={item.icon} size={17} />
-                  <span>{item.label}</span>
-                </button>
-              );
-            })}
-          </div>
-
-          <div className="nav-section">
-            <div className="nav-section-title">MANAGEMENT</div>
-            {MANAGEMENT_GROUPS.map((group) => {
-              const isOpen = !!expanded[group.id];
-              const hasActiveChild = group.items.some(
-                (it) => location.pathname === it.path,
-              );
-
-              return (
-                <div key={group.id}>
+          {visibleTopItems.length > 0 && (
+            <div className="nav-section">
+              <div className="nav-section-title">
+                {role === "super_admin" ? "SUPER ADMIN" : "OVERVIEW"}
+              </div>
+              {visibleTopItems.map((item) => {
+                const isActive =
+                  location.pathname === item.path ||
+                  location.pathname.startsWith(item.path + "/");
+                return (
                   <button
-                    className={`nav-item ${hasActiveChild ? "active" : ""}`}
-                    onClick={() => toggleGroup(group.id)}
+                    key={item.id}
+                    className={`nav-item ${isActive ? "active" : ""}`}
+                    onClick={() => go(item.path)}
                   >
-                    <Icon name={group.icon} size={17} />
-                    <span style={{ flex: 1, textAlign: "left" }}>
-                      {group.label}
-                    </span>
-                    <Icon
-                      name="chevronRight"
-                      size={14}
-                      style={{
-                        transition: "transform 0.15s ease",
-                        transform: isOpen ? "rotate(90deg)" : "rotate(0deg)",
-                      }}
-                    />
+                    <Icon name={item.icon} size={17} />
+                    <span>{item.label}</span>
                   </button>
+                );
+              })}
+            </div>
+          )}
 
-                  {isOpen && (
-                    <div style={{ paddingLeft: 30 }}>
-                      {group.items.map((it) => {
-                        const isActive = location.pathname === it.path;
-                        return (
-                          <button
-                            key={it.id}
-                            className={`nav-item ${isActive ? "active" : ""}`}
-                            style={{ fontSize: 13.5, padding: "8px 10px" }}
-                            onClick={() => go(it.path)}
-                          >
-                            <span>{it.label}</span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+          {visibleGroups.length > 0 && (
+            <div className="nav-section">
+              <div className="nav-section-title">MANAGEMENT</div>
+              {visibleGroups.map((group) => {
+                const isOpen = !!expanded[group.id];
+                const hasActiveChild = group.items.some(
+                  (it) => location.pathname === it.path,
+                );
+
+                return (
+                  <div key={group.id}>
+                    <button
+                      className={`nav-item ${hasActiveChild ? "active" : ""}`}
+                      onClick={() => toggleGroup(group.id)}
+                    >
+                      <Icon name={group.icon} size={17} />
+                      <span style={{ flex: 1, textAlign: "left" }}>
+                        {group.label}
+                      </span>
+                      <Icon
+                        name="chevronRight"
+                        size={14}
+                        style={{
+                          transition: "transform 0.15s ease",
+                          transform: isOpen ? "rotate(90deg)" : "rotate(0deg)",
+                        }}
+                      />
+                    </button>
+
+                    {isOpen && (
+                      <div style={{ paddingLeft: 30 }}>
+                        {group.items.map((it) => {
+                          const isActive = location.pathname === it.path;
+                          return (
+                            <button
+                              key={it.id}
+                              className={`nav-item ${isActive ? "active" : ""}`}
+                              style={{ fontSize: 13.5, padding: "8px 10px" }}
+                              onClick={() => go(it.path)}
+                            >
+                              <Icon name={it.icon} size={15} />
+                              <span>{it.label}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
 
           <div className="nav-section">
             <div className="nav-section-title">SUPPORT</div>
@@ -250,6 +482,7 @@ export default function Sidebar({ open, onClose }) {
           </div>
         </nav>
 
+        {/* ---------- footer (unchanged) ---------- */}
         <div
           className="sidebar-footer"
           style={{
@@ -264,13 +497,21 @@ export default function Sidebar({ open, onClose }) {
           <Icon name="crown" size={18} />
           <div>
             <div className="footer-name" style={{ color: "#fff" }}>
-              Super Admin Access
+              {role === "super_admin"
+                ? "Super Admin Access"
+                : role === "admin"
+                  ? "Admin Access"
+                  : role === "hr"
+                    ? "HR Access"
+                    : "Staff Access"}
             </div>
             <div
               className="footer-tag"
               style={{ color: "rgba(255,255,255,0.85)" }}
             >
-              Full access to all features
+              {role === "super_admin"
+                ? "Full access to all features"
+                : "Access scoped to your company"}
             </div>
           </div>
         </div>

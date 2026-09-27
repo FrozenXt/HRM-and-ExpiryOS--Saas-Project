@@ -1,10 +1,38 @@
-/* Minimal global reset — all theming lives in styles/theme.css */
-* {
+/* src/index.css
+   Minimal global reset.
+   All theming (colors, dark mode, brand) lives in styles/theme.css. */
+
+*,
+*::before,
+*::after {
   box-sizing: border-box;
 }
+
 html,
 body,
 #root {
   margin: 0;
   min-height: 100%;
+}
+
+/* Let native UI (scrollbars, form controls) match the theme.
+   The actual theme value comes from ThemeContext via data-theme. */
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+}
+
+/* Prevent body from scrolling horizontally on small screens */
+body {
+  overflow-x: hidden;
+}
+
+/* Inherit font everywhere (theme.css sets the actual family on body) */
+button,
+input,
+select,
+textarea {
+  font: inherit;
 }

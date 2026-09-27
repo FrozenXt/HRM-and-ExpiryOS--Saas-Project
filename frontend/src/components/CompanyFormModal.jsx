@@ -451,7 +451,7 @@ export default function CompanyFormModal({
                 onChange={onCountryChange}
               >
                 {COUNTRIES.map((c) => (
-                  <option key={c.code} value={c.name}>
+                  <option key={c.name} value={c.name}>
                     {c.name}
                   </option>
                 ))}
@@ -517,7 +517,8 @@ export default function CompanyFormModal({
               >
                 <option value="trial">Trial</option>
                 <option value="active">Active</option>
-                <option value="expired">Expired</option>
+                <option value="past_due">Past due</option>
+                <option value="suspended">Suspended</option>
                 <option value="cancelled">Cancelled</option>
               </select>
             </Field>

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { getCompanies } from "../services/companyService";
 import { Icon } from "../components/Icon";
 import CompanyFormModal from "../components/CompanyFormModal";
@@ -83,6 +84,7 @@ function StatCard({ tone, icon, label, value, trend }) {
 }
 
 export default function Companies() {
+  const navigate = useNavigate();
   const [companies, setCompanies] = useState([]);
   const [pagination, setPagination] = useState({
     page: 1,
@@ -286,7 +288,12 @@ export default function Companies() {
                             company={c}
                             color={AVATAR_COLORS[i % AVATAR_COLORS.length]}
                           />
-                          {c.legalName}
+                          <span
+                            style={{ cursor: "pointer" }}
+                            onClick={() => navigate(`/companies/${c._id}`)}
+                          >
+                            {c.legalName}
+                          </span>
                         </div>
                       </td>
                       <td>{c.contactPerson?.email || c.billingEmail || "-"}</td>
@@ -306,7 +313,10 @@ export default function Companies() {
                       <td>{formatDate(c.createdAt)}</td>
                       <td>
                         <div style={{ display: "flex", gap: 8 }}>
-                          <button className="btn btn-sm">
+                          <button
+                            className="btn btn-sm"
+                            onClick={() => navigate(`/companies/${c._id}`)}
+                          >
                             <Icon name="eye" size={14} /> View
                           </button>
                           <button

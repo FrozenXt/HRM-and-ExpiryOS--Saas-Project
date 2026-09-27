@@ -27,8 +27,21 @@ const currencyExchangeRateRoutes = require("./routes/currency-exchange-rate.rout
 const employeeStatutoryDetailRoutes = require("./routes/employee-statutory-detail.routes");
 const payrollRoutes = require("./routes/payroll.routes");
 const payrollStatutoryDeductionRoutes = require("./routes/payroll-statutory-deduction.routes");
-
+const companySettingsRoutes = require("./routes/company-settings.routes");
+const jobPostingRoutes = require("./routes/job-posting.routes");
+const candidateRoutes = require("./routes/candidate.routes");
+const interviewRoutes = require("./routes/interview.routes");
+const offerRoutes = require("./routes/offer.routes");
+const expenseCategoryRoutes = require("./routes/expense-category.routes");
+const expenseClaimRoutes = require("./routes/expense-claim.routes");
+const receiptRoutes = require("./routes/receipt.routes");
+const assetRoutes = require("./routes/asset.routes");
+const assetAssignmentRoutes = require("./routes/asset-assignment.routes");
 const authRoutes = require("./routes/auth.routes");
+const goalRoutes = require("./routes/goal.routes");
+const performanceReviewRoutes = require("./routes/performance-review.routes");
+const onboardingTaskRoutes = require("./routes/onboarding-task.routes");
+const geofenceZoneRoutes = require("./routes/geofence-zone.routes");
 
 const swaggerSpec = require("./config/swagger");
 
@@ -76,8 +89,28 @@ app.use(
   "/api/v1/payroll-statutory-deductions",
   payrollStatutoryDeductionRoutes,
 );
+app.use("/api/v1/onboarding-tasks", onboardingTaskRoutes);
+app.use("/api/v1/goals", goalRoutes);
+app.use("/api/v1/performance-reviews", performanceReviewRoutes);
+app.use("/api/v1/job-postings", jobPostingRoutes);
+app.use("/api/v1/candidates", candidateRoutes);
+app.use("/api/v1/company-settings", companySettingsRoutes);
+app.use("/api/v1/geofence-zones", geofenceZoneRoutes);
+console.log("interviewRoutes:", typeof interviewRoutes);
+console.log("offerRoutes:", typeof offerRoutes);
 
+app.use("/api/v1/interviews", interviewRoutes);
+app.use("/api/v1/offers", offerRoutes);
+// app.use("/api/v1/uploads", require("./routes/document-upload.routes")); // if not already mounted for logos
 app.use("/api/v1/auth", authRoutes);
+app.use("/api/v1/uploads", require("./routes/upload.routes"));
+app.use("/api/v1/events", require("./routes/event.routes"));
+app.use("/api/v1/announcements", require("./routes/announcement.routes"));
+app.use("/api/v1/expense-categories", expenseCategoryRoutes);
+app.use("/api/v1/expense-claims", expenseClaimRoutes);
+app.use("/api/v1/receipts", receiptRoutes);
+app.use("/api/v1/assets", assetRoutes);
+app.use("/api/v1/asset-assignments", assetAssignmentRoutes);
 
 app.get("/", (req, res) => {
   res.json({

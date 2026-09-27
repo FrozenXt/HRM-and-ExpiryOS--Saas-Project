@@ -4,12 +4,21 @@ const employeeRepository = require("../repositories/employee.repository");
 const userRepository = require("../repositories/user.repository");
 const departmentRepository = require("../repositories/department.repository");
 const designationRepository = require("../repositories/designation.repository");
+const PlanLimit = require("../helpers/plan-limit.helper");
+
+// Related-data models pulled in for the enriched employee detail response.
+// Path convention matches your other models — double check these against
+// your actual model files if any of these requires don't resolve.
+const Attendance = require("../models/attendance.model");
+const TimeLog = require("../models/time-log.model");
+const LeaveBalance = require("../models/leave-balance.model");
+const LeaveRequest = require("../models/leave-request.model");
+const SalaryStructure = require("../models/salary-structure.model");
+const Payroll = require("../models/payroll.model");
+const CompanyDocument = require("../models/company-document.model");
 
 class EmployeeService extends BaseTenantService {
   constructor() {
-    // No uniqueFields — the constraint here is "one Employee per User",
-    // which is handled explicitly in create() since it isn't a simple
-    // per-company-unique field.
     super(employeeRepository, "Employee not found");
   }
 
@@ -25,6 +34,7 @@ class EmployeeService extends BaseTenantService {
 
   async create(data, actingUser) {
     const companyId = TenantScope.resolveCompanyId(actingUser, data.companyId);
+    await PlanLimit.assertCanAddEmployee(companyId);
 
     const user = await userRepository.findById(data.userId);
 
@@ -123,6 +133,148 @@ class EmployeeService extends BaseTenantService {
     }
 
     return employee;
+  }
+
+  // --- Enriched detail response for GET /employees/:id ---------------------
+
+  // Sums checkIn/checkOut gaps from a list of Attendance records into total
+  // hours. Mirrors the same calculation used in attendance.service.js /
+  // payrollCalculations.js on the frontend, so the numbers here should agree
+  // with what those already show.
+  _sumAttendanceHours(records) {
+    let total = 0;
+    for (const r of records) {
+      if (!r.checkIn || !r.checkOut) continue;
+      const worked = (new Date(r.checkOut) - new Date(r.checkIn)) / 3_600_000;
+      if (worked > 0) total += worked;
+    }
+    return Math.round(total * 100) / 100;
+  }
+
+  _sumTimeLogHours(records) {
+    let total = 0;
+    for (const r of records) {
+      total += (r.hoursWorked || 0) + (r.overtimeHours || 0);
+    }
+    return Math.round(total * 100) / 100;
+  }
+
+  async getById(id, actingUser) {
+    const employee = await employeeRepository.findById(id);
+
+    if (!employee) {
+      throw new Error(this.notFoundMessage);
+    }
+
+    TenantScope.assertAccess(actingUser, employee, this.notFoundMessage);
+
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const monthEnd = new Date(
+      now.getFullYear(),
+      now.getMonth() + 1,
+      0,
+      23,
+      59,
+      59,
+      999,
+    );
+    const yearStart = new Date(now.getFullYear(), 0, 1);
+    const yearEnd = new Date(now.getFullYear(), 11, 31, 23, 59, 59, 999);
+
+    const [
+      user,
+      department,
+      designation,
+      reportingManager,
+      attendanceRecords,
+      timeLogRecords,
+      leaveBalances,
+      recentLeaveRequests,
+      salaryStructure,
+      recentPayrolls,
+      documents,
+    ] = await Promise.all([
+      userRepository.findById(employee.userId),
+      departmentRepository.findById(employee.departmentId),
+      designationRepository.findById(employee.designationId),
+      employee.reportingManagerId
+        ? employeeRepository.findById(employee.reportingManagerId)
+        : Promise.resolve(null),
+
+      // This month's attendance.
+      Attendance.find({
+        employeeId: employee._id,
+        date: { $gte: monthStart, $lte: monthEnd },
+      }).sort({ date: -1 }),
+
+      // This month's time logs (all statuses — the totals below only sum
+      // approved ones, but the raw list shows drafts/submitted too).
+      TimeLog.find({
+        employeeId: employee._id,
+        date: { $gte: monthStart, $lte: monthEnd },
+      }).sort({ date: -1 }),
+
+      // This year's leave balances, all leave types.
+      LeaveBalance.find({
+        employeeId: employee._id,
+        year: now.getFullYear(),
+      }),
+
+      // Last 5 leave requests, most recent first.
+      LeaveRequest.find({ employeeId: employee._id })
+        .sort({ createdAt: -1 })
+        .limit(5),
+
+      // One active salary structure per employee (schema-enforced).
+      SalaryStructure.findOne({ employeeId: employee._id }),
+
+      // Last 5 payroll records, most recent period first.
+      Payroll.find({ employeeId: employee._id }).sort({ period: -1 }).limit(5),
+
+      // Last 5 documents for this employee.
+      CompanyDocument.find({ employeeId: employee._id })
+        .sort({ createdAt: -1 })
+        .limit(5),
+    ]);
+
+    const approvedTimeLogs = timeLogRecords.filter(
+      (t) => t.status === "approved",
+    );
+
+    return {
+      ...employee.toObject(),
+
+      user,
+      department,
+      designation,
+      reportingManager,
+
+      attendance: {
+        period: { from: monthStart, to: monthEnd },
+        totalHours: this._sumAttendanceHours(attendanceRecords),
+        records: attendanceRecords,
+      },
+
+      timeLogs: {
+        period: { from: monthStart, to: monthEnd },
+        totalApprovedHours: this._sumTimeLogHours(approvedTimeLogs),
+        records: timeLogRecords,
+      },
+
+      leaveBalances: {
+        year: now.getFullYear(),
+        balances: leaveBalances,
+      },
+
+      recentLeaveRequests,
+
+      salaryStructure,
+
+      recentPayrolls,
+
+      documents,
+    };
   }
 }
 

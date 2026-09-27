@@ -24,6 +24,10 @@ export async function getCompanies({
   );
 }
 
+export async function getMyCompany() {
+  return axios.get(`${API_BASE}/companies/me`, { headers: authHeaders() });
+}
+
 export async function createCompany(payload) {
   return axios.post(`${API_BASE}/companies/register`, payload, {
     headers: authHeaders(),

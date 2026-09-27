@@ -379,6 +379,30 @@ router.post(
   authorize("super_admin"),
   companyController.register,
 );
+/**
+ * @openapi
+ * /api/v1/companies/me:
+ *   get:
+ *     summary: Get my own company
+ *     description: Returns the company the logged-in Admin/HR/Staff belongs to.
+ *     tags:
+ *       - Companies
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Company fetched successfully
+ *       401:
+ *         description: Authentication required or invalid access token
+ *       404:
+ *         description: No company associated with this account
+ */
+router.get(
+  "/me",
+  authenticate,
+  authorize("admin", "hr", "staff"),
+  companyController.me,
+);
 
 /**
  * @openapi

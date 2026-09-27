@@ -15,7 +15,12 @@ class CompanyService {
 
     return company;
   }
-
+  async getMyCompany(companyId) {
+    if (!companyId) {
+      throw new Error("No company associated with this account");
+    }
+    return await this.getCompanyById(companyId);
+  }
   async registerCompany(payload) {
     const { admin, ...companyData } = payload;
 

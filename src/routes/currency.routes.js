@@ -54,7 +54,7 @@ const router = express.Router();
 router.post(
   "/list",
   authenticate,
-  authorize("super_admin"),
+  authorize("super_admin", "admin", "hr"),
   currencyController.index,
 );
 
@@ -87,7 +87,7 @@ router.post(
 router.post(
   "/",
   authenticate,
-  authorize("super_admin"),
+  authorize("super_admin", "admin", "hr"),
   currencyController.store,
 );
 
@@ -109,7 +109,7 @@ router.post(
 router.get(
   "/:id",
   authenticate,
-  authorize("super_admin"),
+  authorize("super_admin", "admin", "hr"),
   currencyController.show,
 );
 
@@ -141,7 +141,7 @@ router.get(
 router.put(
   "/:id",
   authenticate,
-  authorize("super_admin"),
+  authorize("super_admin", "admin", "hr"),
   currencyController.update,
 );
 
@@ -165,7 +165,7 @@ router.put(
 router.delete(
   "/:id",
   authenticate,
-  authorize("super_admin"),
+  authorize("super_admin", "admin"),
   currencyController.destroy,
 );
 

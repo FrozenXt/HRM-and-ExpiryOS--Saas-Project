@@ -75,6 +75,15 @@ class CompanyController {
     }
   }
 
+  async me(req, res) {
+    try {
+      const company = await companyService.getMyCompany(req.user.companyId);
+      return successResponse(res, "Company fetched successfully", company);
+    } catch (error) {
+      return errorResponse(res, error.message, 404);
+    }
+  }
+
   async verify(req, res) {
     try {
       const company = await companyService.setVerificationStatus(

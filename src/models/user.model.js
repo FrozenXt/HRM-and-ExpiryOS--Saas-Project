@@ -79,6 +79,14 @@ userSchema.pre("validate", function () {
   }
 });
 
+userSchema.set("toJSON", {
+  transform: (doc, ret) => {
+    delete ret.password;
+    delete ret.__v;
+    return ret;
+  },
+});
+
 userSchema.pre("save", async function () {
   if (!this.isModified("password")) {
     return;

@@ -2,6 +2,8 @@ const express = require("express");
 const payrollController = require("../controllers/payroll.controller");
 const authenticate = require("../middlewares/auth.middleware");
 const authorize = require("../middlewares/role.middleware");
+const path = require("path");
+
 const {
   buildUploader,
   handleUploadErrors,
@@ -255,6 +257,43 @@ router.post(
   authorize("super_admin", "admin", "hr"),
   uploadPayslip,
   payrollController.release,
+);
+
+router.get("/:id/payslip", authenticate, payrollController.downloadPayslip);
+
+/**
+ * @openapi
+ * /api/v1/payroll/bulk-release:
+ *   post:
+ *     summary: Release multiple approved payroll records at once
+ *     description: >
+ *       Admin/HR/Super Admin only. Each ID is processed independently — one
+ *       failure (e.g. not yet approved) doesn't block the others. Generates
+ *       a payslip PDF for each successfully released record.
+ *     tags: [Payroll]
+ *     security: [{ bearerAuth: [] }]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [ids]
+ *             properties:
+ *               ids:
+ *                 type: array
+ *                 items: { type: string }
+ *     responses:
+ *       200: { description: Bulk release completed }
+ *       400: { description: ids must be a non-empty array }
+ *       401: { description: Authentication required or invalid access token }
+ *       403: { description: Insufficient permissions }
+ */
+router.post(
+  "/bulk-release",
+  authenticate,
+  authorize("super_admin", "admin", "hr"),
+  payrollController.bulkRelease,
 );
 
 module.exports = router;

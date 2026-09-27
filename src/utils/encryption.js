@@ -2,10 +2,6 @@ const crypto = require("crypto");
 
 const ALGORITHM = "aes-256-cbc";
 
-// Lazy — only checked when encrypt/decrypt is actually called, not at
-// module load. This means the server boots fine even if this key isn't
-// set yet; it only throws the moment something tries to touch an
-// encrypted field (aadhaarNumber, bankAccountNumber).
 function getKey() {
   const key = process.env.FIELD_ENCRYPTION_KEY;
 

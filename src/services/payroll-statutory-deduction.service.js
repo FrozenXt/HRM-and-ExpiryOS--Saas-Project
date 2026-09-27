@@ -70,10 +70,19 @@ class PayrollStatutoryDeductionService {
       );
     }
 
-    return await payrollStatutoryDeductionRepository.create({
+    const created = await payrollStatutoryDeductionRepository.create({
       ...data,
       companyId: payroll.companyId,
     });
+
+    // Write the resulting totals back onto the Payroll record itself.
+    await payrollStatutoryDeductionRepository.syncPayrollTotals(
+      created.payrollId,
+    );
+
+    // Re-fetch through findById so the response comes back fully populated,
+    // same shape as getAll/getById.
+    return await payrollStatutoryDeductionRepository.findById(created._id);
   }
 
   async update(id, data, actingUser) {
@@ -86,7 +95,16 @@ class PayrollStatutoryDeductionService {
     );
 
     const { payrollId, companyId, ...safeData } = data;
-    return await payrollStatutoryDeductionRepository.update(id, safeData);
+    const updated = await payrollStatutoryDeductionRepository.update(
+      id,
+      safeData,
+    );
+
+    // doc.payrollId is still the correct id here (payrollId is stripped
+    // from safeData above, so it can't change on update).
+    await payrollStatutoryDeductionRepository.syncPayrollTotals(doc.payrollId);
+
+    return await payrollStatutoryDeductionRepository.findById(updated._id);
   }
 
   async remove(id, actingUser) {
@@ -97,7 +115,20 @@ class PayrollStatutoryDeductionService {
       doc,
       "Payroll statutory deduction not found",
     );
+
+    const payrollId = doc.payrollId?._id || doc.payrollId;
     await payrollStatutoryDeductionRepository.delete(id);
+
+    // Deleting the breakdown removes the employee-side deduction it
+    // contributed — clear Payroll.deductions/netPay back to 0 deductions
+    // rather than leaving stale totals from a now-deleted record.
+    const payroll = await payrollRepository.findById(payrollId);
+    if (payroll) {
+      payroll.deductions = 0;
+      payroll.netPay = (payroll.grossPay || 0) + (payroll.overtimePay || 0);
+      await payroll.save();
+    }
+
     return doc;
   }
 }

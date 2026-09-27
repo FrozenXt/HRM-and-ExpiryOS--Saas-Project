@@ -43,9 +43,19 @@ class EmployeeStatutoryDetailService {
 
   async getById(id, actingUser) {
     const EmployeeStatutoryDetail = require("../models/employee-statutory-detail.model");
-    const doc = await EmployeeStatutoryDetail.findById(id).select(
-      "+aadhaarNumber +bankAccountNumber",
-    );
+    const doc = await EmployeeStatutoryDetail.findById(id)
+      .select("+aadhaarNumber +bankAccountNumber")
+      .populate({
+        path: "employeeId",
+        select: "userId departmentId designationId id_int",
+        populate: [
+          { path: "userId", select: "firstName lastName email" },
+          { path: "departmentId", select: "name" },
+          { path: "designationId", select: "name" },
+        ],
+      })
+      .populate("companyId", "legalName tradeName");
+
     if (!doc) throw new Error("Employee statutory detail not found");
 
     const employeeId = await this._getActingEmployeeId(actingUser);

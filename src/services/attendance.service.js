@@ -1,6 +1,7 @@
-// services/attendance.service.js
 const attendanceRepository = require("../repositories/attendance.repository");
 const employeeRepository = require("../repositories/employee.repository");
+const geofenceZoneRepository = require("../repositories/geofence-zone.repository");
+const { distanceMeters } = require("../utils/geo.util");
 
 class AttendanceService {
   // Staff only ever see/act on their own record; admin/hr see the whole company.
@@ -18,6 +19,39 @@ class AttendanceService {
     }
 
     return scope;
+  }
+
+  async _resolveGeofence(companyId, location) {
+    if (!location || location.latitude == null || location.longitude == null) {
+      return { geofenceId: null, isWithinGeofence: null };
+    }
+
+    const zones =
+      await geofenceZoneRepository.findAllActiveForCompany(companyId);
+
+    if (!zones.length) {
+      return { geofenceId: null, isWithinGeofence: null };
+    }
+
+    let nearest = null;
+    for (const zone of zones) {
+      const distance = distanceMeters(
+        location.latitude,
+        location.longitude,
+        zone.latitude,
+        zone.longitude,
+      );
+      if (
+        distance <= zone.radiusMeters &&
+        (!nearest || distance < nearest.distance)
+      ) {
+        nearest = { zone, distance };
+      }
+    }
+
+    return nearest
+      ? { geofenceId: nearest.zone._id, isWithinGeofence: true }
+      : { geofenceId: null, isWithinGeofence: false };
   }
 
   async getAll(searchHelper, user) {
@@ -87,11 +121,21 @@ class AttendanceService {
       throw err;
     }
 
+    const { geofenceId, isWithinGeofence } = await this._resolveGeofence(
+      user.companyId,
+      location,
+    );
+
     if (existing) {
       return await attendanceRepository.update(
         existing._id,
         { companyId: user.companyId },
-        { checkIn: new Date(), checkInLocation: location || null },
+        {
+          checkIn: new Date(),
+          checkInLocation: location || null,
+          geofenceId,
+          isWithinGeofence,
+        },
       );
     }
 
@@ -102,6 +146,8 @@ class AttendanceService {
       checkIn: new Date(),
       checkInLocation: location || null,
       status: "present",
+      geofenceId,
+      isWithinGeofence,
     });
   }
 
@@ -131,10 +177,20 @@ class AttendanceService {
       throw err;
     }
 
+    const { geofenceId, isWithinGeofence } = await this._resolveGeofence(
+      user.companyId,
+      location,
+    );
+
     return await attendanceRepository.update(
       existing._id,
       { companyId: user.companyId },
-      { checkOut: new Date(), checkOutLocation: location || null },
+      {
+        checkOut: new Date(),
+        checkOutLocation: location || null,
+        geofenceId,
+        isWithinGeofence,
+      },
     );
   }
 }

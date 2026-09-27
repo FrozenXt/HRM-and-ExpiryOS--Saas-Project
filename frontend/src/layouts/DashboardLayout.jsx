@@ -5,8 +5,12 @@ import Navbar from "../components/Navbar";
 import { Icon } from "../components/Icon";
 import "../pages/dashboard.css";
 import "../styles/theme.css";
+import { useBranding } from "../hooks/useBranding"; // <-- ADD
+
 export default function DashboardLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  useBranding(); // <-- ADD: fetches settings + writes CSS vars on <html>
 
   return (
     <div className="wp-app">

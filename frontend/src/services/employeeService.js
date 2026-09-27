@@ -28,6 +28,9 @@ const list = (
 
 export const getEmployees = (opts) => list("employees", opts);
 
+export const getEmployee = (id) =>
+  axios.get(`${API_BASE}/employees/${id}`, { headers: authHeaders() });
+
 export const createEmployee = (payload) =>
   axios.post(`${API_BASE}/employees`, payload, { headers: authHeaders() });
 

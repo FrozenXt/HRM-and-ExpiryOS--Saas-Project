@@ -1,7 +1,9 @@
 const payrollRepository = require("../repositories/payroll.repository");
 const employeeRepository = require("../repositories/employee.repository");
 const currencyRepository = require("../repositories/currency.repository");
+const payrollStatutoryDeductionRepository = require("../repositories/payroll-statutory-deduction.repository");
 const TenantScope = require("../helpers/tenant-scope.helper");
+const payslipService = require("./payslip.service");
 
 const PERIOD_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
 
@@ -107,7 +109,21 @@ class PayrollService {
     };
     this._assertAmountsConsistent(merged);
 
-    return await payrollRepository.update(id, safeData);
+    const updated = await payrollRepository.update(id, safeData);
+
+    // If a statutory deduction breakdown already exists for this payroll,
+    // it is the source of truth for deductions/netPay — re-sync from it so
+    // this edit's own (structure-only) deductions figure doesn't silently
+    // overwrite the breakdown's totals. grossPay/overtimePay from this edit
+    // are kept; only deductions/netPay get recomputed against the existing
+    // breakdown.
+    const existingDeduction =
+      await payrollStatutoryDeductionRepository.findByPayrollId(id);
+    if (existingDeduction) {
+      return await payrollStatutoryDeductionRepository.syncPayrollTotals(id);
+    }
+
+    return updated;
   }
 
   async remove(id, actingUser) {
@@ -148,9 +164,37 @@ class PayrollService {
     }
 
     const update = { status: "released" };
-    if (file) update.payslipUrl = `/uploads/payslips/${file.filename}`;
+
+    if (file) {
+      // Manual override still supported, e.g. a company that wants to attach
+      // its own pre-formatted payslip instead of the generated one.
+      update.payslipUrl = `/uploads/payslips/${file.filename}`;
+    } else {
+      update.payslipUrl = await payslipService.generateAndStore(id);
+    }
 
     return await payrollRepository.update(id, update);
+  }
+  async bulkRelease(ids, actingUser) {
+    if (!Array.isArray(ids) || ids.length === 0) {
+      throw new Error("ids must be a non-empty array of payroll IDs");
+    }
+
+    const results = [];
+    for (const id of ids) {
+      try {
+        const doc = await this.release(id, null, actingUser);
+        results.push({ id, success: true, payroll: doc });
+      } catch (error) {
+        results.push({ id, success: false, error: error.message });
+      }
+    }
+
+    return {
+      releasedCount: results.filter((r) => r.success).length,
+      failedCount: results.filter((r) => !r.success).length,
+      results,
+    };
   }
 }
 

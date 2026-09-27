@@ -42,15 +42,15 @@ const STAT_CARDS = [
     color: "purple",
     cta: "View Reports",
   },
-  {
-    label: "Open Support Tickets",
-    value: "7",
-    change: "-42% from last week",
-    dir: "down",
-    icon: "headphones",
-    color: "pink",
-    cta: "View Tickets",
-  },
+  // {
+  //   label: "Open Support Tickets",
+  //   value: "7",
+  //   change: "-42% from last week",
+  //   dir: "down",
+  //   icon: "headphones",
+  //   color: "pink",
+  //   cta: "View Tickets",
+  // },
 ];
 
 const GROWTH_DATA = [

@@ -1,17 +1,17 @@
 import { useEffect, useState } from "react";
 import { getPlans, getCurrencies } from "../services/lookupService";
 
-// country name -> ISO code + currency code. Extend as needed.
+// country name -> backend country enum (IN | NP | US | other) + currency code.
 export const COUNTRIES = [
   { name: "Nepal", code: "NP", currency: "NPR" },
   { name: "India", code: "IN", currency: "INR" },
-  { name: "Bangladesh", code: "BD", currency: "BDT" },
-  { name: "Sri Lanka", code: "LK", currency: "LKR" },
-  { name: "Pakistan", code: "PK", currency: "PKR" },
+  { name: "Bangladesh", code: "other", currency: "BDT" },
+  { name: "Sri Lanka", code: "other", currency: "LKR" },
+  { name: "Pakistan", code: "other", currency: "PKR" },
   { name: "United States", code: "US", currency: "USD" },
-  { name: "United Kingdom", code: "GB", currency: "GBP" },
-  { name: "United Arab Emirates", code: "AE", currency: "AED" },
-  { name: "Australia", code: "AU", currency: "AUD" },
+  { name: "United Kingdom", code: "other", currency: "GBP" },
+  { name: "United Arab Emirates", code: "other", currency: "AED" },
+  { name: "Australia", code: "other", currency: "AUD" },
 ];
 
 // Adjust these if your plan / currency fields are named differently.

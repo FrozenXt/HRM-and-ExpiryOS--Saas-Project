@@ -1,15 +1,34 @@
 // repositories/leave-request.repository.js
 const LeaveRequest = require("../models/leave-request.model");
 
+// Shared populate chain: leaveTypeId -> name (what this whole change is
+// for), plus employeeId -> its userId for the requester's name, so
+// admin/hr views don't need a separate employees/users lookup either.
+function withDetails(query) {
+  return query
+    .populate("leaveTypeId", "name annualQuota carryForward")
+    .populate({
+      path: "employeeId",
+      select: "userId departmentId designationId id_int",
+      populate: [
+        { path: "userId", select: "firstName lastName email" },
+        { path: "departmentId", select: "name" },
+        { path: "designationId", select: "name" },
+      ],
+    });
+}
+
 class LeaveRequestRepository {
   async findAll(searchHelper, scopeFilter) {
     const filters = { ...searchHelper.getFilters(), ...scopeFilter };
 
     const [data, total] = await Promise.all([
-      LeaveRequest.find(filters)
-        .sort(searchHelper.getSort())
-        .skip(searchHelper.getSkip())
-        .limit(searchHelper.getLimit()),
+      withDetails(
+        LeaveRequest.find(filters)
+          .sort(searchHelper.getSort())
+          .skip(searchHelper.getSkip())
+          .limit(searchHelper.getLimit()),
+      ),
       LeaveRequest.countDocuments(filters),
     ]);
 
@@ -17,7 +36,7 @@ class LeaveRequestRepository {
   }
 
   async findById(id, scopeFilter) {
-    return await LeaveRequest.findOne({ _id: id, ...scopeFilter });
+    return await withDetails(LeaveRequest.findOne({ _id: id, ...scopeFilter }));
   }
 
   async create(data) {
