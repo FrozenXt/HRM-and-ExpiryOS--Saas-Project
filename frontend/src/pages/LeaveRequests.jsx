@@ -2,16 +2,27 @@ import { useEffect, useMemo, useState } from "react";
 import { Icon } from "../components/Icon";
 import StatCard from "../components/StatCard";
 import LeaveRequestFormModal from "../components/LeaveRequestFormModal";
+import { FILE_BASE } from "../config";
 import {
   getLeaveRequests,
   deleteLeaveRequest,
   updateLeaveRequestStatus,
 } from "../services/leaveRequestService";
-import { listOptions } from "../services/employeeService";
 import { getCurrentUser } from "../utils/auth";
 
-const idOf = (v) => v?._id || v || "";
-const fullName = (u) => (u ? `${u.firstName} ${u.lastName || ""}`.trim() : "");
+const AVATAR_COLORS = [
+  "#3b82f6",
+  "#10b981",
+  "#0ea5e9",
+  "#f97316",
+  "#14b8a6",
+  "#ec4899",
+  "#22c55e",
+  "#64748b",
+  "#7c3aed",
+  "#06b6d4",
+];
+
 const fmtDate = (d) =>
   d
     ? new Date(d).toLocaleDateString("en-US", {
@@ -20,14 +31,78 @@ const fmtDate = (d) =>
         year: "numeric",
       })
     : "-";
-const days = (from, to) =>
+
+const daysBetween = (from, to) =>
   from && to ? Math.round((new Date(to) - new Date(from)) / 86400000) + 1 : "-";
+
+const initials = (name = "") =>
+  name
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((w) => w[0])
+    .join("")
+    .toUpperCase() || "?";
 
 const STATUS_BADGE = {
   pending: "plan-business",
   approved: "success",
   rejected: "warning",
   cancelled: "plan-default",
+};
+
+// Photo if there is one, otherwise coloured initials. Falls back to the
+// initials if the image fails to load.
+function PersonAvatar({ name, profileImage, color, size = 34 }) {
+  const [failed, setFailed] = useState(false);
+
+  if (profileImage && !failed) {
+    return (
+      <img
+        src={`${FILE_BASE}${profileImage}`}
+        alt={name}
+        onError={() => setFailed(true)}
+        style={{
+          width: size,
+          height: size,
+          borderRadius: "50%",
+          objectFit: "cover",
+          flexShrink: 0,
+        }}
+      />
+    );
+  }
+
+  return (
+    <span
+      className="co-avatar"
+      style={{ background: color, borderRadius: "50%" }}
+    >
+      {initials(name)}
+    </span>
+  );
+}
+
+// Everything comes from the list response. The nested populated objects are
+// kept as a fallback.
+const view = (r) => {
+  const emp = typeof r.employeeId === "object" ? r.employeeId : null;
+  const user = emp && typeof emp.userId === "object" ? emp.userId : null;
+  const fullName = user
+    ? `${user.firstName} ${user.lastName || ""}`.trim()
+    : "";
+  return {
+    employee: r.employeeName || fullName || "-",
+    email: user?.email || "",
+    department: r.department || emp?.departmentId?.name || "",
+    designation: r.designation || emp?.designationId?.name || "",
+    profileImage: r.profileImage || user?.profileImage || null,
+    leaveType:
+      r.leaveTypeName ||
+      (typeof r.leaveTypeId === "object" ? r.leaveTypeId?.name : "") ||
+      "-",
+    days: r.days ?? daysBetween(r.fromDate, r.toDate),
+  };
 };
 
 export default function LeaveRequests() {
@@ -41,11 +116,6 @@ export default function LeaveRequests() {
     limit: 20,
     total: 0,
     total_pages: 1,
-  });
-  const [names, setNames] = useState({
-    employees: {},
-    users: {},
-    leaveTypes: {},
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -94,44 +164,6 @@ export default function LeaveRequests() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [statusFilter]);
 
-  // Names for ids (records only store ids).
-  useEffect(() => {
-    if (staff) return;
-    Promise.allSettled([
-      listOptions("employees"),
-      listOptions("users"),
-      listOptions("leave-types"),
-    ]).then(([e, u, l]) => {
-      setNames({
-        employees: Object.fromEntries(
-          (e.status === "fulfilled" ? e.value : []).map((x) => [x._id, x]),
-        ),
-        users: Object.fromEntries(
-          (u.status === "fulfilled" ? u.value : []).map((x) => [x._id, x]),
-        ),
-        leaveTypes: Object.fromEntries(
-          (l.status === "fulfilled" ? l.value : []).map((x) => [x._id, x]),
-        ),
-      });
-    });
-  }, [staff]);
-
-  const view = (r) => {
-    const emp =
-      typeof r.employeeId === "object"
-        ? r.employeeId
-        : names.employees[idOf(r.employeeId)];
-    const user =
-      typeof emp?.userId === "object"
-        ? emp.userId
-        : names.users[idOf(emp?.userId)];
-    const lt =
-      typeof r.leaveTypeId === "object"
-        ? r.leaveTypeId
-        : names.leaveTypes[idOf(r.leaveTypeId)];
-    return { employee: fullName(user) || "-", leaveType: lt?.name || "-" };
-  };
-
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
     return rows
@@ -140,12 +172,13 @@ export default function LeaveRequests() {
         if (!q) return true;
         return (
           v.employee.toLowerCase().includes(q) ||
+          v.email.toLowerCase().includes(q) ||
+          v.department.toLowerCase().includes(q) ||
           v.leaveType.toLowerCase().includes(q) ||
           (r.reason || "").toLowerCase().includes(q)
         );
       });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rows, names, search]);
+  }, [rows, search]);
 
   const openCreate = () => {
     setSelected(null);
@@ -320,16 +353,43 @@ export default function LeaveRequests() {
                   )}
                   {filtered.map(({ r, v }, i) => {
                     const pending = r.status === "pending";
+                    // Staff can only change their own pending requests.
+                    const canChange = !staff || pending;
+                    const sub = [v.department, v.designation]
+                      .filter(Boolean)
+                      .join(" · ");
                     return (
                       <tr key={r._id}>
                         <td>{from + i}</td>
                         {!staff && (
-                          <td style={{ fontWeight: 500 }}>{v.employee}</td>
+                          <td>
+                            <div className="company-cell">
+                              <PersonAvatar
+                                key={v.profileImage || r._id}
+                                name={v.employee}
+                                profileImage={v.profileImage}
+                                color={AVATAR_COLORS[i % AVATAR_COLORS.length]}
+                              />
+                              <div>
+                                <div style={{ fontWeight: 500 }}>
+                                  {v.employee}
+                                </div>
+                                {(sub || v.email) && (
+                                  <div
+                                    className="muted"
+                                    style={{ fontSize: 12, fontWeight: 400 }}
+                                  >
+                                    {sub || v.email}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </td>
                         )}
                         <td>{v.leaveType}</td>
                         <td>{fmtDate(r.fromDate)}</td>
                         <td>{fmtDate(r.toDate)}</td>
-                        <td>{days(r.fromDate, r.toDate)}</td>
+                        <td>{v.days}</td>
                         <td>
                           <span
                             style={{
@@ -352,6 +412,14 @@ export default function LeaveRequests() {
                               ? r.status[0].toUpperCase() + r.status.slice(1)
                               : "-"}
                           </span>
+                          {r.approvedByName && (
+                            <div
+                              className="muted"
+                              style={{ fontSize: 11.5, marginTop: 4 }}
+                            >
+                              by {r.approvedByName}
+                            </div>
+                          )}
                         </td>
                         <td>
                           <div
@@ -379,18 +447,31 @@ export default function LeaveRequests() {
                                 </button>
                               </>
                             )}
-                            <button
-                              className="btn btn-sm"
-                              onClick={() => openEdit(r)}
-                            >
-                              <Icon name="edit" size={13} /> Edit
-                            </button>
-                            <button
-                              className="btn btn-sm btn-danger"
-                              onClick={() => handleDelete(r)}
-                            >
-                              <Icon name="trash" size={14} /> Delete
-                            </button>
+                            {canChange && (
+                              <>
+                                <button
+                                  className="btn btn-sm"
+                                  onClick={() => openEdit(r)}
+                                >
+                                  <Icon name="edit" size={13} /> Edit
+                                </button>
+                                <button
+                                  className="btn btn-sm btn-danger"
+                                  onClick={() => handleDelete(r)}
+                                >
+                                  <Icon name="trash" size={14} />{" "}
+                                  {staff ? "Cancel" : "Delete"}
+                                </button>
+                              </>
+                            )}
+                            {!canChange && !canReview && (
+                              <span
+                                className="muted"
+                                style={{ fontSize: 12.5 }}
+                              >
+                                Decided
+                              </span>
+                            )}
                           </div>
                         </td>
                       </tr>

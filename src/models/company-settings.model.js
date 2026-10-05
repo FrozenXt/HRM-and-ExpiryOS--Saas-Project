@@ -10,13 +10,28 @@ const workingHoursSchema = new mongoose.Schema(
   },
   { _id: false },
 );
-
 const attendancePolicySchema = new mongoose.Schema(
   {
     fullDayMinHours: { type: Number, default: 8 },
     halfDayMinHours: { type: Number, default: 4 },
     lateMarkGraceMinutes: { type: Number, default: 15 },
     autoMarkAbsentIfNoCheckIn: { type: Boolean, default: true },
+
+    // --- auto check-out ---
+    autoCheckoutEnabled: { type: Boolean, default: false },
+    autoCheckoutMode: {
+      type: String,
+      enum: ["afterHours", "fixedTime", "afterShiftEnd"],
+      default: "afterHours",
+    },
+    autoCheckoutAfterHours: { type: Number, min: 1, max: 24, default: 10 },
+    autoCheckoutTime: {
+      type: String,
+      match: /^([01]\d|2[0-3]):[0-5]\d$/, // "HH:mm"
+      default: "20:00",
+    },
+    // for mode "afterShiftEnd": hours after the employee's shift ends
+    autoCheckoutShiftBufferHours: { type: Number, min: 0, max: 12, default: 2 },
   },
   { _id: false },
 );

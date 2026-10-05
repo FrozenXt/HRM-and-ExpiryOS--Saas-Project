@@ -2,21 +2,91 @@ import { useEffect, useMemo, useState } from "react";
 import { Icon } from "../components/Icon";
 import StatCard from "../components/StatCard";
 import LeaveBalanceModal from "../components/LeaveBalanceModal";
-import {
-  getLeaveBalances,
-  deleteLeaveBalance,
-} from "../services/leaveBalanceService";
-import { listOptions } from "../services/employeeService";
+import { FILE_BASE } from "../config";
+import { getLeaveBalances } from "../services/leaveBalanceService";
 import { getCurrentUser } from "../utils/auth";
 
-const idOf = (v) => v?._id || v || "";
-const fullName = (u) => (u ? `${u.firstName} ${u.lastName || ""}`.trim() : "");
-const byId = (rows) => Object.fromEntries(rows.map((r) => [r._id, r]));
+const AVATAR_COLORS = [
+  "#3b82f6",
+  "#10b981",
+  "#0ea5e9",
+  "#f97316",
+  "#14b8a6",
+  "#ec4899",
+  "#22c55e",
+  "#64748b",
+  "#7c3aed",
+  "#06b6d4",
+];
+
+const initials = (name = "") =>
+  name
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((w) => w[0])
+    .join("")
+    .toUpperCase() || "?";
+
+// Photo if there is one, otherwise coloured initials. Falls back to the
+// initials if the image fails to load.
+function PersonAvatar({ name, profileImage, color, size = 34 }) {
+  const [failed, setFailed] = useState(false);
+
+  if (profileImage && !failed) {
+    return (
+      <img
+        src={`${FILE_BASE}${profileImage}`}
+        alt={name}
+        onError={() => setFailed(true)}
+        style={{
+          width: size,
+          height: size,
+          borderRadius: "50%",
+          objectFit: "cover",
+          flexShrink: 0,
+        }}
+      />
+    );
+  }
+
+  return (
+    <span
+      className="co-avatar"
+      style={{ background: color, borderRadius: "50%" }}
+    >
+      {initials(name)}
+    </span>
+  );
+}
+
+// Everything comes from the list response.
+const view = (r) => {
+  const emp = r.employee || null;
+  const used = r.used || 0;
+  const remaining = r.remaining || 0;
+  const pending = r.pendingDays || 0;
+  return {
+    employee: r.employeeName || emp?.name || "-",
+    email: emp?.email || "",
+    department: emp?.department || "",
+    designation: emp?.designation || "",
+    profileImage: r.profileImage || emp?.profileImage || null,
+    leaveType: r.leaveTypeName || "-",
+    allocated: r.allocated ?? r.annualQuota ?? used + remaining,
+    used,
+    pending,
+    remaining,
+    available: r.availableDays ?? remaining - pending,
+  };
+};
 
 export default function LeaveBalances() {
   const role = getCurrentUser()?.role || "";
   const staff = role === "staff";
-  const canManage = role === "admin" || role === "hr" || role === "super_admin";
+  // Balances are created and updated automatically. Admin/HR can only
+  // adjust one (for example a manual correction).
+  const canAdjust = role === "admin" || role === "hr" || role === "super_admin";
 
   const [rows, setRows] = useState([]);
   const [pagination, setPagination] = useState({
@@ -25,16 +95,10 @@ export default function LeaveBalances() {
     total: 0,
     total_pages: 1,
   });
-  const [names, setNames] = useState({
-    employees: {},
-    users: {},
-    leaveTypes: {},
-  });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
   const [yearFilter, setYearFilter] = useState("");
-  const [modalMode, setModalMode] = useState(null);
   const [selected, setSelected] = useState(null);
 
   const fetchRows = async (page = 1) => {
@@ -76,38 +140,6 @@ export default function LeaveBalances() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [yearFilter]);
 
-  // Names for ids (records only store ids).
-  useEffect(() => {
-    if (staff) return;
-    Promise.allSettled([
-      listOptions("employees"),
-      listOptions("users"),
-      listOptions("leave-types"),
-    ]).then(([e, u, l]) => {
-      setNames({
-        employees: byId(e.status === "fulfilled" ? e.value : []),
-        users: byId(u.status === "fulfilled" ? u.value : []),
-        leaveTypes: byId(l.status === "fulfilled" ? l.value : []),
-      });
-    });
-  }, [staff]);
-
-  const view = (r) => {
-    const emp =
-      typeof r.employeeId === "object"
-        ? r.employeeId
-        : names.employees[idOf(r.employeeId)];
-    const user =
-      typeof emp?.userId === "object"
-        ? emp.userId
-        : names.users[idOf(emp?.userId)];
-    const lt =
-      typeof r.leaveTypeId === "object"
-        ? r.leaveTypeId
-        : names.leaveTypes[idOf(r.leaveTypeId)];
-    return { employee: fullName(user) || "-", leaveType: lt?.name || "-" };
-  };
-
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
     return rows
@@ -116,42 +148,18 @@ export default function LeaveBalances() {
         if (!q) return true;
         return (
           v.employee.toLowerCase().includes(q) ||
+          v.email.toLowerCase().includes(q) ||
+          v.department.toLowerCase().includes(q) ||
           v.leaveType.toLowerCase().includes(q)
         );
       });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rows, names, search]);
+  }, [rows, search]);
 
   const totalUsed = rows.reduce((n, r) => n + (r.used || 0), 0);
+  const totalPending = rows.reduce((n, r) => n + (r.pendingDays || 0), 0);
   const totalRemaining = rows.reduce((n, r) => n + (r.remaining || 0), 0);
 
-  const openCreate = () => {
-    setSelected(null);
-    setModalMode("create");
-  };
-  const openEdit = (r) => {
-    setSelected(r);
-    setModalMode("edit");
-  };
-  const closeModal = () => {
-    setModalMode(null);
-    setSelected(null);
-  };
-
-  const handleDelete = async (r, v) => {
-    if (
-      !window.confirm(
-        `Delete the ${v.leaveType} balance for ${v.employee} (${r.year})?`,
-      )
-    )
-      return;
-    try {
-      await deleteLeaveBalance(r._id);
-      fetchRows(pagination.page);
-    } catch (err) {
-      alert(err.response?.data?.message || err.message || "Failed to delete");
-    }
-  };
+  const selectedView = selected ? view(selected) : null;
 
   const from = pagination.total
     ? (pagination.page - 1) * pagination.limit + 1
@@ -173,15 +181,10 @@ export default function LeaveBalances() {
           <h1>Leave Balances</h1>
           <p>
             {staff
-              ? "Your leave balances by type and year."
-              : "Leave balances for every employee, by type and year."}
+              ? "Your leave balances by type and year. They update automatically when your leave is approved."
+              : "Balances are created automatically for every employee and leave type, and update when leave is approved."}
           </p>
         </div>
-        {canManage && (
-          <button className="btn primary" onClick={openCreate}>
-            <Icon name="plusCircle" size={17} /> Add Balance
-          </button>
-        )}
       </div>
 
       <div className="stat-grid">
@@ -196,6 +199,12 @@ export default function LeaveBalances() {
           icon="clock"
           label="Used Days (this page)"
           value={totalUsed}
+        />
+        <StatCard
+          tone="purple"
+          icon="list"
+          label="Pending Days (this page)"
+          value={totalPending}
         />
         <StatCard
           tone="green"
@@ -262,17 +271,19 @@ export default function LeaveBalances() {
                     {!staff && <th>Employee</th>}
                     <th>Leave Type</th>
                     <th>Year</th>
+                    <th>Allocated</th>
                     <th>Used</th>
+                    <th>Pending</th>
                     <th>Remaining</th>
-                    <th>Total</th>
-                    {canManage && <th>Actions</th>}
+                    <th>Available</th>
+                    {canAdjust && <th>Actions</th>}
                   </tr>
                 </thead>
                 <tbody>
                   {filtered.length === 0 && (
                     <tr>
                       <td
-                        colSpan={staff ? 6 : canManage ? 8 : 7}
+                        colSpan={(staff ? 8 : 9) + (canAdjust ? 1 : 0)}
                         className="muted"
                         style={{ textAlign: "center", padding: 28 }}
                       >
@@ -280,43 +291,64 @@ export default function LeaveBalances() {
                       </td>
                     </tr>
                   )}
-                  {filtered.map(({ r, v }, i) => (
-                    <tr key={r._id}>
-                      <td>{from + i}</td>
-                      {!staff && (
-                        <td style={{ fontWeight: 500 }}>{v.employee}</td>
-                      )}
-                      <td>{v.leaveType}</td>
-                      <td>{r.year}</td>
-                      <td>{r.used}</td>
-                      <td>
-                        <span
-                          className={`badge ${r.remaining > 0 ? "success" : "warning"}`}
-                        >
-                          {r.remaining}
-                        </span>
-                      </td>
-                      <td>{(r.used || 0) + (r.remaining || 0)}</td>
-                      {canManage && (
+                  {filtered.map(({ r, v }, i) => {
+                    const sub = [v.department, v.designation]
+                      .filter(Boolean)
+                      .join(" · ");
+                    return (
+                      <tr key={r._id}>
+                        <td>{from + i}</td>
+                        {!staff && (
+                          <td>
+                            <div className="company-cell">
+                              <PersonAvatar
+                                key={v.profileImage || r._id}
+                                name={v.employee}
+                                profileImage={v.profileImage}
+                                color={AVATAR_COLORS[i % AVATAR_COLORS.length]}
+                              />
+                              <div>
+                                <div style={{ fontWeight: 500 }}>
+                                  {v.employee}
+                                </div>
+                                {(sub || v.email) && (
+                                  <div
+                                    className="muted"
+                                    style={{ fontSize: 12, fontWeight: 400 }}
+                                  >
+                                    {sub || v.email}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </td>
+                        )}
+                        <td>{v.leaveType}</td>
+                        <td>{r.year}</td>
+                        <td>{v.allocated}</td>
+                        <td>{v.used}</td>
+                        <td>{v.pending}</td>
+                        <td>{v.remaining}</td>
                         <td>
-                          <div style={{ display: "flex", gap: 8 }}>
+                          <span
+                            className={`badge ${v.available > 0 ? "success" : "warning"}`}
+                          >
+                            {v.available}
+                          </span>
+                        </td>
+                        {canAdjust && (
+                          <td>
                             <button
                               className="btn btn-sm"
-                              onClick={() => openEdit(r)}
+                              onClick={() => setSelected(r)}
                             >
                               <Icon name="edit" size={13} /> Adjust
                             </button>
-                            <button
-                              className="btn btn-sm btn-danger"
-                              onClick={() => handleDelete(r, v)}
-                            >
-                              <Icon name="trash" size={14} /> Delete
-                            </button>
-                          </div>
-                        </td>
-                      )}
-                    </tr>
-                  ))}
+                          </td>
+                        )}
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -358,13 +390,13 @@ export default function LeaveBalances() {
         )}
       </section>
 
-      {modalMode && (
+      {selected && canAdjust && (
         <LeaveBalanceModal
-          mode={modalMode}
+          mode="edit"
           balance={selected}
-          employeeName={selected ? view(selected).employee : ""}
-          leaveTypeName={selected ? view(selected).leaveType : ""}
-          onClose={closeModal}
+          employeeName={selectedView.employee}
+          leaveTypeName={selectedView.leaveType}
+          onClose={() => setSelected(null)}
           onSaved={() => fetchRows(pagination.page)}
         />
       )}

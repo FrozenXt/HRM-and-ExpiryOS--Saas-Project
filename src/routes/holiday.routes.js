@@ -54,7 +54,7 @@ const router = express.Router();
 router.post(
   "/list",
   authenticate,
-  authorize("super_admin", "admin", "hr"),
+  authorize("super_admin", "admin", "hr", "staff"),
   holidayController.index,
 );
 

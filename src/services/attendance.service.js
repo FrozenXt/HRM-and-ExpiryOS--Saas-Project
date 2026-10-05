@@ -2,6 +2,16 @@ const attendanceRepository = require("../repositories/attendance.repository");
 const employeeRepository = require("../repositories/employee.repository");
 const geofenceZoneRepository = require("../repositories/geofence-zone.repository");
 const { distanceMeters } = require("../utils/geo.util");
+const { attachEmployeeInfo } = require("../helpers/employee-info.helper");
+const companySettingsRepository = require("../repositories/company-settings.repository");
+const Shift = require("../models/shift.model");
+const { checkWorkingDay } = require("../helpers/working-day.helper");
+const {
+  resolveEffectiveShift,
+  windowForCheckIn,
+  classifyCheckIn,
+  statusAfterCheckOut,
+} = require("../utils/shift.util");
 
 class AttendanceService {
   // Staff only ever see/act on their own record; admin/hr see the whole company.
@@ -54,6 +64,23 @@ class AttendanceService {
       : { geofenceId: null, isWithinGeofence: false };
   }
 
+  // The shift that applies to this employee (their own, or the company hours)
+  // plus the company attendance policy.
+  async _shiftContext(employee, companyId) {
+    const [settingsDoc, shiftDoc] = await Promise.all([
+      companySettingsRepository.findByCompanyId(companyId),
+      employee.shiftId ? Shift.findById(employee.shiftId).lean() : null,
+    ]);
+    const settings = settingsDoc?.toObject
+      ? settingsDoc.toObject()
+      : settingsDoc || {};
+
+    return {
+      shift: resolveEffectiveShift(shiftDoc, settings),
+      policy: settings.attendancePolicy || {},
+    };
+  }
+
   async getAll(searchHelper, user) {
     const scope = await this._scopeFor(user);
     return await attendanceRepository.findAll(searchHelper, scope);
@@ -67,7 +94,8 @@ class AttendanceService {
       err.statusCode = 404;
       throw err;
     }
-    return record;
+    const [enriched] = await attachEmployeeInfo([record]);
+    return enriched;
   }
 
   async create(data, user) {
@@ -100,11 +128,26 @@ class AttendanceService {
     return record;
   }
 
+  // Tells the UI whether today is a normal working day for this company
+  // (not a holiday, not one of the week-off days from settings).
+  async dayStatus(user) {
+    return await checkWorkingDay(user.companyId);
+  }
+
   async checkIn(user, location) {
     const employee = await employeeRepository.findByUserId(user._id);
     if (!employee) {
       const err = new Error("No employee profile linked to this user");
       err.statusCode = 404;
+      throw err;
+    }
+
+    // No check-in on a holiday or a week-off day. The week-off days come
+    // from the company settings, so they are different for every company.
+    const dayCheck = await checkWorkingDay(user.companyId);
+    if (!dayCheck.allowed) {
+      const err = new Error(dayCheck.message);
+      err.statusCode = 400;
       throw err;
     }
 
@@ -126,13 +169,23 @@ class AttendanceService {
       location,
     );
 
+    // Late or on time, judged against this employee's shift.
+    const now = new Date();
+    const { shift } = await this._shiftContext(employee, user.companyId);
+    const status = classifyCheckIn(
+      now,
+      windowForCheckIn(now, shift),
+      shift.graceMinutes,
+    );
+
     if (existing) {
       return await attendanceRepository.update(
         existing._id,
         { companyId: user.companyId },
         {
-          checkIn: new Date(),
+          checkIn: now,
           checkInLocation: location || null,
+          status,
           geofenceId,
           isWithinGeofence,
         },
@@ -143,9 +196,9 @@ class AttendanceService {
       employeeId: employee._id,
       companyId: user.companyId,
       date: today,
-      checkIn: new Date(),
+      checkIn: now,
       checkInLocation: location || null,
-      status: "present",
+      status,
       geofenceId,
       isWithinGeofence,
     });
@@ -159,20 +212,23 @@ class AttendanceService {
       throw err;
     }
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    const existing = await attendanceRepository.findByEmployeeAndDate(
+    // The open check-in, even if it started yesterday (night shifts check
+    // out after midnight, so looking up "today's" record would miss it).
+    const existing = await attendanceRepository.findOpenForEmployee(
       employee._id,
-      today,
     );
-    if (!existing || !existing.checkIn) {
-      const err = new Error("You must check in before checking out");
-      err.statusCode = 400;
-      throw err;
-    }
-    if (existing.checkOut) {
-      const err = new Error("Already checked out today");
+    if (!existing) {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const todays = await attendanceRepository.findByEmployeeAndDate(
+        employee._id,
+        today,
+      );
+      const err = new Error(
+        todays && todays.checkOut
+          ? "Already checked out today"
+          : "You must check in before checking out",
+      );
       err.statusCode = 400;
       throw err;
     }
@@ -182,12 +238,27 @@ class AttendanceService {
       location,
     );
 
+    // Full day / half day / absent, from hours worked against the shift.
+    const now = new Date();
+    const { shift, policy } = await this._shiftContext(
+      employee,
+      user.companyId,
+    );
+    const status = statusAfterCheckOut({
+      currentStatus: existing.status,
+      checkIn: existing.checkIn,
+      checkOut: now,
+      shift,
+      policy,
+    });
+
     return await attendanceRepository.update(
       existing._id,
       { companyId: user.companyId },
       {
-        checkOut: new Date(),
+        checkOut: now,
         checkOutLocation: location || null,
+        status,
         geofenceId,
         isWithinGeofence,
       },

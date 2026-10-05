@@ -336,7 +336,7 @@ export default function StatutoryRules() {
         )}
       </section>
 
-      <p className="muted" style={{ fontSize: 12, marginTop: 14 }}>
+      {/* <p className="muted" style={{ fontSize: 12, marginTop: 14 }}>
         Note: "Country & Applicability" is saved to your real backend via{" "}
         <code>PATCH /company-settings</code> — but I haven't seen that
         endpoint's exact update payload shape, so I'm sending{" "}
@@ -347,7 +347,7 @@ export default function StatutoryRules() {
         this browser's localStorage — add <code>pfEmployeeRate</code> /{" "}
         <code>pfEmployerRate</code> / <code>gratuityRate</code> fields to the
         schema if you want it synced properly across your team.
-      </p>
+      </p> */}
     </>
   );
 }

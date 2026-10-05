@@ -27,6 +27,18 @@ class PlanController {
     }
   }
 
+  // Any authenticated user — company admins browse active plans here when
+  // subscribing or upgrading.
+  async active(req, res) {
+    try {
+      const plans = await planService.getActivePlans();
+
+      return successResponse(res, "Active plans fetched successfully", plans);
+    } catch (error) {
+      return errorResponse(res, error.message);
+    }
+  }
+
   async show(req, res) {
     try {
       const plan = await planService.getPlanById(req.params.id);

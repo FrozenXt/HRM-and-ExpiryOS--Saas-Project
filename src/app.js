@@ -42,8 +42,14 @@ const goalRoutes = require("./routes/goal.routes");
 const performanceReviewRoutes = require("./routes/performance-review.routes");
 const onboardingTaskRoutes = require("./routes/onboarding-task.routes");
 const geofenceZoneRoutes = require("./routes/geofence-zone.routes");
-
+const deviceSession = require("./routes/device-session.routes");
+const locationTrace = require("./routes/location-trace.routes");
+const monitoringConsentRoutes = require("./routes/monitoring-consent.routes");
+const activityLogRoutes = require("./routes/activity-log.routes");
+const screenshotRoutes = require("./routes/screenshot.routes");
 const swaggerSpec = require("./config/swagger");
+const monitoringPolicyRoutes = require("./routes/monitoring-policy.routes");
+const shiftRoutes = require("./routes/shift.routes");
 
 const app = express();
 
@@ -89,6 +95,7 @@ app.use(
   "/api/v1/payroll-statutory-deductions",
   payrollStatutoryDeductionRoutes,
 );
+app.use("/api/v1/notifications", require("./routes/notification.routes"));
 app.use("/api/v1/onboarding-tasks", onboardingTaskRoutes);
 app.use("/api/v1/goals", goalRoutes);
 app.use("/api/v1/performance-reviews", performanceReviewRoutes);
@@ -111,7 +118,30 @@ app.use("/api/v1/expense-claims", expenseClaimRoutes);
 app.use("/api/v1/receipts", receiptRoutes);
 app.use("/api/v1/assets", assetRoutes);
 app.use("/api/v1/asset-assignments", assetAssignmentRoutes);
-
+app.use("/api/v1/device-sessions", deviceSession);
+app.use("/api/v1/location-traces", locationTrace);
+app.use("/api/v1/monitoring-consents", monitoringConsentRoutes);
+app.use("/api/v1/activity-logs", activityLogRoutes);
+app.use("/api/v1/screenshots", screenshotRoutes);
+app.use("/api/v1/monitoring-policy", monitoringPolicyRoutes);
+app.use("/api/v1/subscriptions", require("./routes/subscription.routes")); // add this
+app.use(
+  "/api/v1/notification-templates",
+  require("./routes/notification-template.routes"),
+);
+app.use(
+  "/api/v1/notification-logs",
+  require("./routes/notification-log.routes"),
+);
+app.use(
+  "/api/v1/saved-report-views",
+  require("./routes/saved-report-view.routes"),
+);
+app.use("/api/v1/dashboard", require("./routes/admin-dashboard.routes"));
+app.use("/api/v1/audit-logs", require("./routes/audit-log.routes"));
+app.use("/api/v1/dashboard", require("./routes/staff-dashboard.routes"));
+app.use("/api/v1/dashboard", require("./routes/admin-dashboard.routes"));
+app.use("/api/v1/shifts", shiftRoutes);
 app.get("/", (req, res) => {
   res.json({
     success: true,

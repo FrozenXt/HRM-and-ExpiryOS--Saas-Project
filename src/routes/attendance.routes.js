@@ -122,6 +122,7 @@ router.post(
   attendanceController.checkOut,
 );
 
+router.get("/day-status", authenticate, attendanceController.dayStatus);
 /**
  * @openapi
  * /api/v1/attendance/{id}:

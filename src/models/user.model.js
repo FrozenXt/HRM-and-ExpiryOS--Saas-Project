@@ -45,6 +45,11 @@ const userSchema = new mongoose.Schema(
       index: true,
     },
 
+    profileImage: {
+      type: String,
+      default: null,
+    },
+
     // New: bumping this instantly invalidates every access token already issued to this user
     tokenVersion: {
       type: Number,

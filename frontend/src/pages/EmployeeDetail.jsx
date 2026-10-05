@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Icon } from "../components/Icon";
 import { getEmployee } from "../services/employeeService";
+import { FILE_BASE } from "../config";
 import "../styles/settings.css"; // still used for .settings-panel-card / .settings-grid / etc.
 
 const idOf = (v) => v?._id || v || "";
@@ -61,6 +62,49 @@ const TABS = [
   { key: "payroll", label: "Salary & Payroll" },
   { key: "documents", label: "Documents" },
 ];
+
+// Photo if there is one, otherwise the initials. Falls back to the initials
+// if the image fails to load.
+function DetailAvatar({ name, profileImage, size = 52 }) {
+  const [failed, setFailed] = useState(false);
+
+  if (profileImage && !failed) {
+    return (
+      <img
+        src={`${FILE_BASE}${profileImage}`}
+        alt={name}
+        onError={() => setFailed(true)}
+        style={{
+          width: size,
+          height: size,
+          borderRadius: "50%",
+          objectFit: "cover",
+          flexShrink: 0,
+        }}
+      />
+    );
+  }
+
+  return (
+    <span
+      className="co-avatar"
+      style={{
+        width: size,
+        height: size,
+        fontSize: 18,
+        background: "#3b82f6",
+        borderRadius: "50%",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        color: "#fff",
+        flexShrink: 0,
+      }}
+    >
+      {initials(name)}
+    </span>
+  );
+}
 
 // Inline, self-contained — deliberately not a CSS class, so this can't be
 // broken by a stylesheet not being loaded/merged correctly.
@@ -163,6 +207,7 @@ export default function EmployeeDetail() {
 
   const user = employee?.user;
   const name = fullName(user) || `Employee #${employee?.id_int ?? ""}`;
+  const profileImage = employee?.profileImage || user?.profileImage || null;
 
   const attendanceRecords = employee?.attendance?.records || [];
   const timeLogRecords = employee?.timeLogs?.records || [];
@@ -228,23 +273,7 @@ export default function EmployeeDetail() {
 
       <div className="welcome-row">
         <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-          <span
-            className="co-avatar"
-            style={{
-              width: 52,
-              height: 52,
-              fontSize: 18,
-              background: "#3b82f6",
-              borderRadius: "50%",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              color: "#fff",
-              flexShrink: 0,
-            }}
-          >
-            {initials(name)}
-          </span>
+          <DetailAvatar name={name} profileImage={profileImage} />
           <div className="welcome-text">
             <h1>{name}</h1>
             <p>

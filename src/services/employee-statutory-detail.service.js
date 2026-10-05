@@ -3,11 +3,6 @@ const employeeRepository = require("../repositories/employee.repository");
 const TenantScope = require("../helpers/tenant-scope.helper");
 const { maskLastN, decrypt } = require("../utils/encryption");
 
-// aadhaarNumber/bankAccountNumber are select:false at the schema level, so
-// by default they never come back from find()/findById(). This mask() is a
-// second layer for the one place we DO explicitly select them (getById),
-// so the API response still never contains the real number — only Payroll
-// generation (internal, via findDecryptedByEmployeeId) sees the real value.
 function maskSensitive(doc) {
   const obj = doc.toObject ? doc.toObject() : doc;
   if (obj.aadhaarNumber)
@@ -33,8 +28,7 @@ class EmployeeStatutoryDetailService {
       {},
       employeeId,
     );
-    // Default find() already excludes the select:false fields, so nothing
-    // extra to mask here — list view intentionally omits them entirely.
+
     return await employeeStatutoryDetailRepository.findAll(
       searchHelper,
       scopeFilters,
@@ -42,20 +36,7 @@ class EmployeeStatutoryDetailService {
   }
 
   async getById(id, actingUser) {
-    const EmployeeStatutoryDetail = require("../models/employee-statutory-detail.model");
-    const doc = await EmployeeStatutoryDetail.findById(id)
-      .select("+aadhaarNumber +bankAccountNumber")
-      .populate({
-        path: "employeeId",
-        select: "userId departmentId designationId id_int",
-        populate: [
-          { path: "userId", select: "firstName lastName email" },
-          { path: "departmentId", select: "name" },
-          { path: "designationId", select: "name" },
-        ],
-      })
-      .populate("companyId", "legalName tradeName");
-
+    const doc = await employeeStatutoryDetailRepository.findByIdFull(id);
     if (!doc) throw new Error("Employee statutory detail not found");
 
     const employeeId = await this._getActingEmployeeId(actingUser);
@@ -66,7 +47,8 @@ class EmployeeStatutoryDetailService {
       "Employee statutory detail not found",
     );
 
-    return maskSensitive(doc);
+    const [shaped] = employeeStatutoryDetailRepository.shape([doc]);
+    return shaped;
   }
 
   async create(data, actingUser) {

@@ -1,6 +1,8 @@
 import axios from "axios";
 
 const API_BASE = "http://localhost:5000/api/v1";
+export const getDayStatus = () =>
+  axios.get(`${API_BASE}/attendance/day-status`, h());
 
 function authHeaders() {
   const token = localStorage.getItem("accessToken");

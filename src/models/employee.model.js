@@ -37,6 +37,11 @@ const employeeSchema = new mongoose.Schema(
       required: true,
       index: true,
     },
+    shiftId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Shift",
+      default: null,
+    },
     reportingManagerId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Employee",

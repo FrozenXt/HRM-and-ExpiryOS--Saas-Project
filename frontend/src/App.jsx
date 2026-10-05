@@ -33,6 +33,17 @@ import Announcements from "./pages/Announcements";
 import StatutoryDetails from "./pages/StatutoryDetails";
 import Assets from "./pages/Assets";
 import AssetAssignments from "./pages/AssetAssignments";
+import GeofenceZones from "./pages/GeofenceZones";
+import DeviceSessions from "./pages/DeviceSessions";
+import Monitoring from "./pages/Monitoring";
+import OnboardingTasks from "./pages/OnboardingTasks";
+import MonitoringPolicy from "./pages/MonitoringPolicy";
+import RegularizationRequests from "./pages/RegularizationRequests";
+import Profile from "./pages/Profile";
+import PerformanceReviews from "./pages/PerformanceReviews";
+import Shifts from "./pages/Shifts";
+import Subscriptions from "./pages/Subscriptions";
+import MySubscription from "./pages/MySubscription";
 
 function App() {
   return (
@@ -72,6 +83,21 @@ function App() {
         <Route path="/statutory-details" element={<StatutoryDetails />} />
         <Route path="/assets" element={<Assets />} />
         <Route path="/asset-assignments" element={<AssetAssignments />} />
+        <Route path="/geofence-zones" element={<GeofenceZones />} />
+        <Route path="/device-sessions" element={<DeviceSessions />} />
+        <Route path="/monitoring" element={<Monitoring />} />
+        <Route path="/onboarding-tasks" element={<OnboardingTasks />} />
+        <Route path="/monitoring-policy" element={<MonitoringPolicy />} />
+        <Route path="/profile" element={<Profile />} />
+        <Route path="/performance-reviews" element={<PerformanceReviews />} />
+        <Route path="/shifts" element={<Shifts />} />
+        <Route path="/subscriptions" element={<Subscriptions />} />
+        {/* Company Admin — their own company's plan/usage/upgrade */}
+        <Route path="/my-subscription" element={<MySubscription />} />
+        <Route
+          path="/regularization-requests"
+          element={<RegularizationRequests />}
+        />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

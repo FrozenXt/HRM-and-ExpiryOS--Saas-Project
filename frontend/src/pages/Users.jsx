@@ -5,6 +5,7 @@ import UserFormModal from "../components/UserFormModal";
 import { getUsers, deleteUser } from "../services/userService";
 import { isSuperAdmin } from "../utils/auth";
 
+const FILE_BASE = "http://localhost:5000";
 const idOf = (v) => v?._id || v || "";
 
 const AVATAR_COLORS = [
@@ -235,12 +236,32 @@ export default function Users() {
                       <td>{u.id_int ?? from + i}</td>
                       <td>
                         <div className="company-cell">
+                          {u.profileImage ? (
+                            <img
+                              src={`${FILE_BASE}${u.profileImage}`}
+                              alt={`${u.firstName} ${u.lastName}`}
+                              style={{
+                                width: 32,
+                                height: 32,
+                                borderRadius: "50%",
+                                objectFit: "cover",
+                                flexShrink: 0,
+                              }}
+                              onError={(e) => {
+                                // fall back to initials if the image fails to load
+                                e.currentTarget.style.display = "none";
+                                e.currentTarget.nextSibling.style.display =
+                                  "inline-flex";
+                              }}
+                            />
+                          ) : null}
                           <span
                             className="co-avatar"
                             style={{
                               background:
                                 AVATAR_COLORS[i % AVATAR_COLORS.length],
                               borderRadius: "50%",
+                              display: u.profileImage ? "none" : "inline-flex",
                             }}
                           >
                             {initials(u)}

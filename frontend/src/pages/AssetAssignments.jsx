@@ -3,13 +3,35 @@ import { Icon } from "../components/Icon";
 import { isSuperAdmin, getCurrentUser } from "../utils/auth";
 import StatCard from "../components/StatCard";
 import ReturnAssetModal from "../components/ReturnAssetModal";
+import { FILE_BASE } from "../config";
 import {
   getAssetAssignments,
   deleteAssetAssignment,
 } from "../services/assetService";
 
-const fullName = (u) => (u ? `${u.firstName} ${u.lastName || ""}`.trim() : "");
-const readableLabel = (v = "") => v[0]?.toUpperCase() + v.slice(1);
+const AVATAR_COLORS = [
+  "#3b82f6",
+  "#10b981",
+  "#0ea5e9",
+  "#f97316",
+  "#14b8a6",
+  "#ec4899",
+  "#22c55e",
+  "#64748b",
+  "#7c3aed",
+  "#06b6d4",
+];
+
+const readableLabel = (v = "") => (v ? v[0].toUpperCase() + v.slice(1) : "");
+
+const initials = (name = "") =>
+  name
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((w) => w[0])
+    .join("")
+    .toUpperCase() || "?";
 
 const formatDate = (d) =>
   d
@@ -24,6 +46,62 @@ const conditionBadge = {
   good: "success",
   damaged: "warning",
   lost: "plan-business",
+};
+
+// Photo if there is one, otherwise coloured initials. Falls back to the
+// initials if the image fails to load.
+function PersonAvatar({ name, profileImage, color, size = 34 }) {
+  const [failed, setFailed] = useState(false);
+
+  if (profileImage && !failed) {
+    return (
+      <img
+        src={`${FILE_BASE}${profileImage}`}
+        alt={name}
+        onError={() => setFailed(true)}
+        style={{
+          width: size,
+          height: size,
+          borderRadius: "50%",
+          objectFit: "cover",
+          flexShrink: 0,
+        }}
+      />
+    );
+  }
+
+  return (
+    <span
+      className="co-avatar"
+      style={{ background: color, borderRadius: "50%" }}
+    >
+      {initials(name)}
+    </span>
+  );
+}
+
+const nameFrom = (u) =>
+  u && typeof u === "object" ? `${u.firstName} ${u.lastName || ""}`.trim() : "";
+
+// Everything comes from the list response; the nested populated objects are
+// kept as a fallback.
+const view = (r) => {
+  const asset = typeof r.assetId === "object" ? r.assetId : null;
+  const emp = typeof r.employeeId === "object" ? r.employeeId : null;
+  const user = emp && typeof emp.userId === "object" ? emp.userId : null;
+  return {
+    employee: r.employeeName || nameFrom(user) || "-",
+    email: r.email || user?.email || "",
+    department: r.department || emp?.departmentId?.name || "",
+    designation: r.designation || emp?.designationId?.name || "",
+    profileImage: r.profileImage || user?.profileImage || null,
+    assetName: r.assetName || asset?.name || "-",
+    assetTag: r.assetTag || asset?.assetTag || "",
+    assetCategory: r.assetCategory || asset?.category || "",
+    assignedBy: r.assignedByName || nameFrom(r.assignedBy) || "-",
+    daysHeld: r.daysHeld,
+    returned: r.isReturned ?? !!r.returnedDate,
+  };
 };
 
 export default function AssetAssignments() {
@@ -77,12 +155,17 @@ export default function AssetAssignments() {
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
-    return rows.filter((r) => {
-      const holder = fullName(r.employeeId?.userId).toLowerCase();
-      const asset =
-        `${r.assetId?.assetTag || ""} ${r.assetId?.name || ""}`.toLowerCase();
-      return holder.includes(q) || asset.includes(q);
-    });
+    return rows
+      .map((r) => ({ r, v: view(r) }))
+      .filter(
+        ({ v }) =>
+          v.employee.toLowerCase().includes(q) ||
+          v.email.toLowerCase().includes(q) ||
+          v.department.toLowerCase().includes(q) ||
+          v.assetName.toLowerCase().includes(q) ||
+          v.assetTag.toLowerCase().includes(q) ||
+          v.assetCategory.toLowerCase().includes(q),
+      );
   }, [rows, search]);
 
   const activeCount = rows.filter((r) => !r.returnedDate).length;
@@ -101,6 +184,8 @@ export default function AssetAssignments() {
     ? (pagination.page - 1) * pagination.limit + 1
     : 0;
   const to = Math.min(pagination.page * pagination.limit, pagination.total);
+
+  const colCount = 7 + (isStaff ? 0 : 1) + (canManage ? 1 : 0);
 
   return (
     <>
@@ -149,7 +234,7 @@ export default function AssetAssignments() {
               <Icon name="search" size={16} />
               <input
                 type="text"
-                placeholder="Search by employee or asset..."
+                placeholder="Search by employee, department or asset..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
@@ -184,6 +269,7 @@ export default function AssetAssignments() {
                     {!isStaff && <th>Employee</th>}
                     <th>Assigned Date</th>
                     <th>Returned Date</th>
+                    <th>Days Held</th>
                     <th>Condition</th>
                     <th>Assigned By</th>
                     {canManage && <th>Actions</th>}
@@ -193,9 +279,7 @@ export default function AssetAssignments() {
                   {filtered.length === 0 && (
                     <tr>
                       <td
-                        colSpan={
-                          isStaff ? (canManage ? 6 : 5) : canManage ? 7 : 6
-                        }
+                        colSpan={colCount}
                         className="muted"
                         style={{ textAlign: "center", padding: 28 }}
                       >
@@ -203,58 +287,102 @@ export default function AssetAssignments() {
                       </td>
                     </tr>
                   )}
-                  {filtered.map((r, i) => (
-                    <tr key={r._id}>
-                      <td>{r.id_int ?? from + i}</td>
-                      <td>
-                        {r.assetId?.assetTag} — {r.assetId?.name}
-                      </td>
-                      {!isStaff && (
-                        <td>{fullName(r.employeeId?.userId) || "-"}</td>
-                      )}
-                      <td>{formatDate(r.assignedDate)}</td>
-                      <td>{formatDate(r.returnedDate)}</td>
-                      <td>
-                        {r.condition ? (
-                          <span
-                            className={`badge ${conditionBadge[r.condition] || "warning"}`}
-                          >
-                            {readableLabel(r.condition)}
-                          </span>
-                        ) : (
-                          "-"
-                        )}
-                      </td>
-                      <td>{fullName(r.assignedBy) || "-"}</td>
-                      {canManage && (
+                  {filtered.map(({ r, v }, i) => {
+                    const sub = [v.department, v.designation]
+                      .filter(Boolean)
+                      .join(" · ");
+                    return (
+                      <tr key={r._id}>
+                        <td>{r.id_int ?? from + i}</td>
                         <td>
-                          <div
-                            style={{
-                              display: "flex",
-                              gap: 8,
-                              flexWrap: "wrap",
-                            }}
-                          >
-                            {!r.returnedDate && (
-                              <button
-                                className="btn btn-sm primary"
-                                onClick={() => setReturningAssignment(r)}
-                              >
-                                <Icon name="chevronLeft" size={13} /> Mark
-                                Returned
-                              </button>
-                            )}
-                            <button
-                              className="btn btn-sm btn-danger"
-                              onClick={() => handleDelete(r)}
+                          <div style={{ fontWeight: 500 }}>{v.assetName}</div>
+                          {(v.assetTag || v.assetCategory) && (
+                            <div
+                              className="muted"
+                              style={{ fontSize: 12, fontWeight: 400 }}
                             >
-                              <Icon name="trash" size={14} /> Delete
-                            </button>
-                          </div>
+                              {[v.assetTag, v.assetCategory]
+                                .filter(Boolean)
+                                .join(" · ")}
+                            </div>
+                          )}
                         </td>
-                      )}
-                    </tr>
-                  ))}
+                        {!isStaff && (
+                          <td>
+                            <div className="company-cell">
+                              <PersonAvatar
+                                key={v.profileImage || r._id}
+                                name={v.employee}
+                                profileImage={v.profileImage}
+                                color={AVATAR_COLORS[i % AVATAR_COLORS.length]}
+                              />
+                              <div>
+                                <div style={{ fontWeight: 500 }}>
+                                  {v.employee}
+                                </div>
+                                {(sub || v.email) && (
+                                  <div
+                                    className="muted"
+                                    style={{ fontSize: 12, fontWeight: 400 }}
+                                  >
+                                    {sub || v.email}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </td>
+                        )}
+                        <td>{formatDate(r.assignedDate)}</td>
+                        <td>
+                          {v.returned ? (
+                            formatDate(r.returnedDate)
+                          ) : (
+                            <span className="badge warning">In use</span>
+                          )}
+                        </td>
+                        <td>{v.daysHeld != null ? `${v.daysHeld} d` : "-"}</td>
+                        <td>
+                          {r.condition ? (
+                            <span
+                              className={`badge ${conditionBadge[r.condition] || "warning"}`}
+                            >
+                              {readableLabel(r.condition)}
+                            </span>
+                          ) : (
+                            "-"
+                          )}
+                        </td>
+                        <td>{v.assignedBy}</td>
+                        {canManage && (
+                          <td>
+                            <div
+                              style={{
+                                display: "flex",
+                                gap: 8,
+                                flexWrap: "wrap",
+                              }}
+                            >
+                              {!r.returnedDate && (
+                                <button
+                                  className="btn btn-sm primary"
+                                  onClick={() => setReturningAssignment(r)}
+                                >
+                                  <Icon name="chevronLeft" size={13} /> Mark
+                                  Returned
+                                </button>
+                              )}
+                              <button
+                                className="btn btn-sm btn-danger"
+                                onClick={() => handleDelete(r)}
+                              >
+                                <Icon name="trash" size={14} /> Delete
+                              </button>
+                            </div>
+                          </td>
+                        )}
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

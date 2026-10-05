@@ -1,7 +1,8 @@
 // src/pages/Settings.jsx
 import { useEffect, useState } from "react";
 import { Icon } from "../components/Icon";
-import { applyBranding, applyTheme } from "../hooks/useBranding";
+import { applyBranding, getPersonalPrefs } from "../hooks/useBranding";
+import { useBranding as useCompanyBranding } from "../context/BrandingContext";
 import { useTheme } from "../context/ThemeContext";
 import {
   getCompanySettings,
@@ -10,7 +11,7 @@ import {
 import { getCompanies } from "../services/companyService";
 import { uploadLogo, assetUrl } from "../services/uploadService";
 import "../styles/settings.css";
-import { isSuperAdmin, myCompanyId } from "../utils/auth"; // adjust path to wherever this file lives
+import { isSuperAdmin, currentUserId } from "../utils/auth";
 
 const DAYS = [
   { key: "sun", label: "Sun" },
@@ -37,6 +38,11 @@ const emptySettings = {
     halfDayMinHours: 4,
     lateMarkGraceMinutes: 10,
     autoMarkAbsentIfNoCheckIn: true,
+    autoCheckoutEnabled: false,
+    autoCheckoutMode: "afterHours",
+    autoCheckoutAfterHours: 10,
+    autoCheckoutTime: "20:00",
+    autoCheckoutShiftBufferHours: 2,
   },
   financialYearStartMonth: 4,
   branding: {
@@ -107,6 +113,15 @@ const Toggle = ({ checked, onChange, title, desc }) => (
 export default function Settings() {
   const superAdmin = isSuperAdmin();
   const { setThemeExplicit } = useTheme();
+  const { reload: reloadBranding } = useCompanyBranding();
+
+  // Live preview while picking colors: only for an admin editing their OWN
+  // company, and only if they have no personal colors (those take priority).
+  const previewBranding = (primary, secondary) => {
+    if (superAdmin) return;
+    if (getPersonalPrefs(currentUserId())?.primaryColor) return;
+    applyBranding(primary, secondary);
+  };
 
   const [settings, setSettings] = useState(emptySettings);
   const [loading, setLoading] = useState(!superAdmin); // super admin waits for a company pick
@@ -150,18 +165,8 @@ export default function Settings() {
       const res = await getCompanySettings(companyId);
       const data = res.data.data || {};
       setSettings((prev) => ({ ...prev, ...data }));
-
-      const id = companyId || data.companyId || data._id || myCompanyId();
-      if (id) localStorage.setItem("wp-current-company", id);
-
-      const b = data.branding || {};
-      if (b.primaryColor) {
-        applyBranding(b.primaryColor, b.secondaryColor, id);
-      }
-      if (b.defaultTheme) {
-        applyTheme(b.defaultTheme, id);
-        setThemeExplicit(b.defaultTheme); // keep Navbar icon in sync
-      }
+      // Viewing a company's settings must not repaint this user's dashboard.
+      // The Branding provider decides what this user sees.
     } catch (err) {
       setError(err.response?.data?.message || err.message);
     } finally {
@@ -238,19 +243,10 @@ export default function Settings() {
       const res = await updateCompanySettings(payload);
       setSettings((prev) => ({ ...prev, ...res.data.data }));
 
-      const id =
-        (superAdmin ? selectedCompanyId : myCompanyId()) ||
-        res.data.data?.companyId ||
-        res.data.data?._id;
-
-      const b = res.data.data?.branding || settings.branding;
-      if (b.primaryColor) {
-        applyBranding(b.primaryColor, b.secondaryColor, id);
-      }
-      if (b.defaultTheme) {
-        applyTheme(b.defaultTheme, id);
-        setThemeExplicit(b.defaultTheme);
-      }
+      // An admin saving their own company: refresh the shared company default
+      // (their personal colors, if any, still win). A super admin editing
+      // another company changes nothing on their own screen.
+      if (!superAdmin) reloadBranding();
 
       setSavedNote(true);
       setTimeout(() => setSavedNote(false), 3000);
@@ -483,6 +479,110 @@ export default function Settings() {
                       update("attendancePolicy", "autoMarkAbsentIfNoCheckIn", v)
                     }
                   />
+
+                  <div className="settings-divider" />
+
+                  <Toggle
+                    title="Auto check-out"
+                    desc="Automatically check out employees who forgot to. Runs on the server every 5 minutes."
+                    checked={settings.attendancePolicy.autoCheckoutEnabled}
+                    onChange={(v) =>
+                      update("attendancePolicy", "autoCheckoutEnabled", v)
+                    }
+                  />
+
+                  {settings.attendancePolicy.autoCheckoutEnabled && (
+                    <div className="settings-grid" style={{ marginTop: 14 }}>
+                      <Field label="Auto check-out rule">
+                        <select
+                          value={settings.attendancePolicy.autoCheckoutMode}
+                          onChange={(e) =>
+                            update(
+                              "attendancePolicy",
+                              "autoCheckoutMode",
+                              e.target.value,
+                            )
+                          }
+                        >
+                          <option value="afterHours">
+                            After a number of hours from check-in
+                          </option>
+                          <option value="fixedTime">
+                            At a fixed time of day
+                          </option>
+                          <option value="afterShiftEnd">
+                            After the employee's shift ends
+                          </option>
+                        </select>
+                      </Field>
+
+                      {settings.attendancePolicy.autoCheckoutMode ===
+                      "afterShiftEnd" ? (
+                        <Field
+                          label="Hours after shift ends"
+                          hint="Uses each employee's own shift (company hours if they have none). Works for night shifts."
+                        >
+                          <input
+                            type="number"
+                            min="0"
+                            max="12"
+                            step="0.5"
+                            value={
+                              settings.attendancePolicy
+                                .autoCheckoutShiftBufferHours ?? 2
+                            }
+                            onChange={(e) =>
+                              update(
+                                "attendancePolicy",
+                                "autoCheckoutShiftBufferHours",
+                                Number(e.target.value),
+                              )
+                            }
+                          />
+                        </Field>
+                      ) : settings.attendancePolicy.autoCheckoutMode ===
+                        "fixedTime" ? (
+                        <Field
+                          label="Check out at"
+                          hint="Company timezone. Check-ins after this time close at the same time next day."
+                        >
+                          <input
+                            type="time"
+                            value={settings.attendancePolicy.autoCheckoutTime}
+                            onChange={(e) =>
+                              update(
+                                "attendancePolicy",
+                                "autoCheckoutTime",
+                                e.target.value,
+                              )
+                            }
+                          />
+                        </Field>
+                      ) : (
+                        <Field
+                          label="Check out after (hours)"
+                          hint="Checked out exactly this long after check-in."
+                        >
+                          <input
+                            type="number"
+                            min="1"
+                            max="24"
+                            step="0.5"
+                            value={
+                              settings.attendancePolicy.autoCheckoutAfterHours
+                            }
+                            onChange={(e) =>
+                              update(
+                                "attendancePolicy",
+                                "autoCheckoutAfterHours",
+                                Number(e.target.value),
+                              )
+                            }
+                          />
+                        </Field>
+                      )}
+                    </div>
+                  )}
                 </>
               )}
 
@@ -553,10 +653,9 @@ export default function Settings() {
                           onChange={(e) => {
                             const v = e.target.value;
                             update("branding", "primaryColor", v);
-                            applyBranding(
+                            previewBranding(
                               v,
                               settings.branding.secondaryColor,
-                              superAdmin ? selectedCompanyId : myCompanyId(),
                             ); // live preview
                           }}
                         />
@@ -577,7 +676,7 @@ export default function Settings() {
                           onChange={(e) => {
                             const v = e.target.value;
                             update("branding", "secondaryColor", v);
-                            applyBranding(settings.branding.primaryColor, v); // live preview
+                            previewBranding(settings.branding.primaryColor, v); // live preview
                           }}
                         />
                         <input
@@ -595,16 +694,13 @@ export default function Settings() {
                         onChange={(e) => {
                           const v = e.target.value;
                           update("branding", "defaultTheme", v);
-                          setThemeExplicit(v);
-                          applyTheme(
-                            v,
-                            superAdmin ? selectedCompanyId : myCompanyId(),
-                          ); // live preview
-                          applyBranding(
-                            // keep soft tint in sync
-                            settings.branding.primaryColor,
-                            settings.branding.secondaryColor,
-                          );
+                          // preview only when this is the admin's own company
+                          // and they have no personal light/dark choice
+                          if (
+                            !superAdmin &&
+                            !getPersonalPrefs(currentUserId())?.theme
+                          )
+                            setThemeExplicit(v);
                         }}
                       >
                         <option value="light">Light</option>

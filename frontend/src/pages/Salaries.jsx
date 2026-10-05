@@ -3,14 +3,26 @@ import { Icon } from "../components/Icon";
 import { isSuperAdmin } from "../utils/auth";
 import StatCard from "../components/StatCard";
 import SalaryFormModal from "../components/SalaryFormModal";
+import { FILE_BASE } from "../config";
 import { listOptions } from "../services/employeeService";
 import {
   getSalaryStructures,
   deleteSalaryStructure,
 } from "../services/salaryService";
 
-const idOf = (v) => v?._id || v || "";
-const fullName = (u) => (u ? `${u.firstName} ${u.lastName || ""}`.trim() : "");
+const AVATAR_COLORS = [
+  "#3b82f6",
+  "#10b981",
+  "#0ea5e9",
+  "#f97316",
+  "#14b8a6",
+  "#ec4899",
+  "#22c55e",
+  "#64748b",
+  "#7c3aed",
+  "#06b6d4",
+];
+
 const initials = (name = "") =>
   name
     .trim()
@@ -27,17 +39,46 @@ const wageTypeLabel = (w) => (w ? w[0].toUpperCase() + w.slice(1) : "-");
 const money = (amount, symbol) =>
   `${symbol || ""}${Number(amount || 0).toLocaleString()}`;
 
-const netPay = (s) => {
-  const allowances = (s.allowances || []).reduce(
-    (n, a) => n + (a.amount || 0),
-    0,
+const sum = (items) =>
+  (items || []).reduce((n, i) => n + (Number(i?.amount) || 0), 0);
+
+// Uses the totals from the API, falling back to computing them.
+const netPay = (s) =>
+  (s.basic || 0) +
+  (s.totalAllowances ?? sum(s.allowances)) -
+  (s.totalDeductions ?? sum(s.deductions));
+
+// Photo if there is one, otherwise coloured initials. Falls back to the
+// initials if the image fails to load.
+function PersonAvatar({ name, profileImage, color, size = 34 }) {
+  const [failed, setFailed] = useState(false);
+
+  if (profileImage && !failed) {
+    return (
+      <img
+        src={`${FILE_BASE}${profileImage}`}
+        alt={name}
+        onError={() => setFailed(true)}
+        style={{
+          width: size,
+          height: size,
+          borderRadius: "50%",
+          objectFit: "cover",
+          flexShrink: 0,
+        }}
+      />
+    );
+  }
+
+  return (
+    <span
+      className="co-avatar"
+      style={{ background: color, borderRadius: "50%" }}
+    >
+      {initials(name)}
+    </span>
   );
-  const deductions = (s.deductions || []).reduce(
-    (n, d) => n + (d.amount || 0),
-    0,
-  );
-  return (s.basic || 0) + allowances - deductions;
-};
+}
 
 export default function SalaryStructures() {
   const superAdmin = isSuperAdmin();
@@ -48,12 +89,7 @@ export default function SalaryStructures() {
     total: 0,
     total_pages: 0,
   });
-  const [lookups, setLookups] = useState({
-    users: {},
-    employees: {},
-    companies: {},
-    currencies: {},
-  });
+  const [companies, setCompanies] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
@@ -61,27 +97,13 @@ export default function SalaryStructures() {
   const [modalMode, setModalMode] = useState(null); // "create" | "edit" | null
   const [selected, setSelected] = useState(null);
 
-  // Names for ids (the structure document only stores ids).
-  const loadLookups = async () => {
-    try {
-      const [users, employees, companies, currencies] = (
-        await Promise.allSettled([
-          listOptions("users"),
-          listOptions("employees"),
-          superAdmin ? listOptions("companies") : Promise.resolve([]),
-          listOptions("currencies"),
-        ])
-      ).map((r) => (r.status === "fulfilled" ? r.value : []));
-      setLookups({
-        users: byId(users),
-        employees: byId(employees),
-        companies: byId(companies),
-        currencies: byId(currencies),
-      });
-    } catch {
-      /* names just fall back to "-" */
-    }
-  };
+  // Only a super admin sees the Company column, so only they need this.
+  useEffect(() => {
+    if (!superAdmin) return;
+    listOptions("companies")
+      .then((rows) => setCompanies(byId(rows)))
+      .catch(() => {});
+  }, [superAdmin]);
 
   const fetchStructures = async (page = 1) => {
     try {
@@ -104,50 +126,41 @@ export default function SalaryStructures() {
   };
 
   useEffect(() => {
-    loadLookups();
-  }, []);
-
-  useEffect(() => {
     fetchStructures(1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wageFilter]);
 
-  // Works whether the API returns ids or populated objects.
+  // Everything comes from the list response; only the company name needs
+  // the (super admin) lookup.
   const view = (s) => {
-    const employee =
-      typeof s.employeeId === "object"
-        ? s.employeeId
-        : lookups.employees[s.employeeId];
-    const user =
-      typeof employee?.userId === "object"
-        ? employee.userId
-        : lookups.users[employee?.userId];
+    const emp = s.employee || null;
     const company =
-      typeof s.companyId === "object"
-        ? s.companyId
-        : lookups.companies[s.companyId];
-    const currency =
-      typeof s.currencyId === "object"
-        ? s.currencyId
-        : lookups.currencies[s.currencyId];
+      typeof s.companyId === "object" ? s.companyId : companies[s.companyId];
+    const code = s.currency?.code || "";
     return {
-      employeeName: fullName(user) || "-",
+      employeeName: s.employeeName || emp?.name || "-",
+      email: emp?.email || "",
+      department: emp?.department || "",
+      designation: emp?.designation || "",
+      profileImage: s.profileImage || emp?.profileImage || null,
       company: company?.legalName || "-",
-      currencyCode: currency?.code || "-",
-      currencySymbol: currency?.symbol || "",
+      currencyCode: code || "-",
+      currencySymbol: s.currency?.symbol || (code ? `${code} ` : ""),
     };
   };
 
   const rows = useMemo(
     () => structures.map((s) => ({ s, v: view(s) })),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [structures, lookups],
+    [structures, companies],
   );
 
   const filtered = rows.filter(({ v }) => {
     const q = search.toLowerCase();
     return (
       v.employeeName.toLowerCase().includes(q) ||
+      v.email.toLowerCase().includes(q) ||
+      v.department.toLowerCase().includes(q) ||
       v.company.toLowerCase().includes(q) ||
       v.currencyCode.toLowerCase().includes(q)
     );
@@ -247,7 +260,7 @@ export default function SalaryStructures() {
               <Icon name="search" size={16} />
               <input
                 type="text"
-                placeholder="Search by employee, company or currency..."
+                placeholder="Search by employee, department or currency..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
@@ -284,6 +297,8 @@ export default function SalaryStructures() {
                     <th>Wage Type</th>
                     <th>Pay Frequency</th>
                     <th>Basic</th>
+                    <th>Allowances</th>
+                    <th>Deductions</th>
                     <th>Net Pay</th>
                     <th>Actions</th>
                   </tr>
@@ -292,7 +307,7 @@ export default function SalaryStructures() {
                   {filtered.length === 0 && (
                     <tr>
                       <td
-                        colSpan={superAdmin ? 8 : 7}
+                        colSpan={superAdmin ? 10 : 9}
                         className="muted"
                         style={{ textAlign: "center", padding: 28 }}
                       >
@@ -301,50 +316,78 @@ export default function SalaryStructures() {
                       </td>
                     </tr>
                   )}
-                  {filtered.map(({ s, v }, i) => (
-                    <tr key={s._id}>
-                      <td>{s.id_int ?? from + i}</td>
-                      <td>
-                        <div className="company-cell">
-                          <span
-                            className="co-avatar"
-                            style={{
-                              background: "#3b82f6",
-                              borderRadius: "50%",
-                            }}
-                          >
-                            {initials(v.employeeName)}
+                  {filtered.map(({ s, v }, i) => {
+                    const sub = [v.department, v.designation]
+                      .filter(Boolean)
+                      .join(" · ");
+                    return (
+                      <tr key={s._id}>
+                        <td>{s.id_int ?? from + i}</td>
+                        <td>
+                          <div className="company-cell">
+                            <PersonAvatar
+                              key={v.profileImage || s._id}
+                              name={v.employeeName}
+                              profileImage={v.profileImage}
+                              color={AVATAR_COLORS[i % AVATAR_COLORS.length]}
+                            />
+                            <div>
+                              <div style={{ fontWeight: 500 }}>
+                                {v.employeeName}
+                              </div>
+                              {(sub || v.email) && (
+                                <div
+                                  className="muted"
+                                  style={{ fontSize: 12, fontWeight: 400 }}
+                                >
+                                  {sub || v.email}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </td>
+                        {superAdmin && <td>{v.company}</td>}
+                        <td>
+                          <span className="badge plan-default">
+                            {wageTypeLabel(s.wageType)}
                           </span>
-                          <span>{v.employeeName}</span>
-                        </div>
-                      </td>
-                      {superAdmin && <td>{v.company}</td>}
-                      <td>
-                        <span className="badge plan-default">
-                          {wageTypeLabel(s.wageType)}
-                        </span>
-                      </td>
-                      <td>{s.payFrequency || "-"}</td>
-                      <td>{money(s.basic, v.currencySymbol)}</td>
-                      <td>{money(netPay(s), v.currencySymbol)}</td>
-                      <td>
-                        <div style={{ display: "flex", gap: 8 }}>
-                          <button
-                            className="btn btn-sm"
-                            onClick={() => openEdit(s)}
-                          >
-                            <Icon name="edit" size={13} /> Edit
-                          </button>
-                          <button
-                            className="btn btn-sm btn-danger"
-                            onClick={() => handleDelete(s, v.employeeName)}
-                          >
-                            <Icon name="trash" size={14} /> Delete
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                        </td>
+                        <td>{s.payFrequency || "-"}</td>
+                        <td>{money(s.basic, v.currencySymbol)}</td>
+                        <td>
+                          {money(
+                            s.totalAllowances ?? sum(s.allowances),
+                            v.currencySymbol,
+                          )}
+                        </td>
+                        <td>
+                          {money(
+                            s.totalDeductions ?? sum(s.deductions),
+                            v.currencySymbol,
+                          )}
+                        </td>
+                        <td style={{ fontWeight: 600 }}>
+                          {money(netPay(s), v.currencySymbol)}
+                        </td>
+                        <td>
+                          <div style={{ display: "flex", gap: 8 }}>
+                            <button
+                              className="btn btn-sm"
+                              onClick={() => openEdit(s)}
+                            >
+                              <Icon name="edit" size={13} /> Edit
+                            </button>
+                            <button
+                              className="btn btn-sm btn-danger"
+                              onClick={() => handleDelete(s, v.employeeName)}
+                            >
+                              <Icon name="trash" size={14} /> Delete
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

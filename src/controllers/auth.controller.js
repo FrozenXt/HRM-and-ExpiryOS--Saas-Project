@@ -3,12 +3,14 @@ const authService = require("../services/auth.service");
 class AuthController {
   async login(req, res) {
     try {
-      const { email, password } = req.body;
+      const { email, password, deviceId, deviceType, os, appVersion } =
+        req.body;
       const result = await authService.login(
         email,
         password,
         req.ip,
         req.get("user-agent"),
+        { deviceId, deviceType, os, appVersion },
       );
       return res
         .status(200)

@@ -3,6 +3,15 @@ const express = require("express");
 const userController = require("../controllers/user.controller");
 const authenticate = require("../middlewares/auth.middleware");
 const authorize = require("../middlewares/role.middleware");
+const {
+  buildUploader,
+  handleUploadErrors,
+} = require("../middlewares/upload.middleware");
+const profileImageUpload = buildUploader("profiles", [
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+]);
 
 const router = express.Router();
 
@@ -259,6 +268,10 @@ router.post(
   userController.store,
 );
 
+router.get("/me", authenticate, userController.getMe);
+router.patch("/me", authenticate, userController.updateMe);
+router.post("/me/password", authenticate, userController.changePassword);
+
 /**
  * @openapi
  * /api/v1/users/{id}:
@@ -419,6 +432,95 @@ router.delete(
   authenticate,
   authorize("super_admin", "admin"),
   userController.destroy,
+);
+/**
+ * @openapi
+ * /api/v1/users/profile-image:
+ *   post:
+ *     summary: Upload my own profile image
+ *     description: Upload or replace the logged-in user's profile image.
+ *     tags:
+ *       - Users
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - profileImage
+ *             properties:
+ *               profileImage:
+ *                 type: string
+ *                 format: binary
+ *                 description: JPG, PNG or WebP. Maximum 5MB.
+ *     responses:
+ *       200:
+ *         description: Profile image uploaded successfully
+ *       400:
+ *         description: Invalid image, missing image, or file exceeds 5MB
+ *       401:
+ *         description: Authentication required or invalid access token
+ */
+router.post(
+  "/profile-image",
+  authenticate,
+  authorize("super_admin", "admin", "hr", "staff"),
+  handleUploadErrors(profileImageUpload.single("profileImage")),
+  userController.uploadProfileImage,
+);
+
+/**
+ * @openapi
+ * /api/v1/users/{id}/profile-image:
+ *   post:
+ *     summary: Upload a profile image for a specific user
+ *     description: Super admin or admin uploads or replaces another user's profile image.
+ *     tags:
+ *       - Users
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         description: Target user's MongoDB ObjectId
+ *         schema:
+ *           type: string
+ *           example: 68ba1234567890abcdef1234
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - profileImage
+ *             properties:
+ *               profileImage:
+ *                 type: string
+ *                 format: binary
+ *                 description: JPG, PNG or WebP. Maximum 5MB.
+ *     responses:
+ *       200:
+ *         description: Profile image uploaded successfully
+ *       400:
+ *         description: Invalid image, missing image, or file exceeds 5MB
+ *       401:
+ *         description: Authentication required or invalid access token
+ *       403:
+ *         description: Insufficient permissions
+ *       404:
+ *         description: User not found
+ */
+router.post(
+  "/:id/profile-image",
+  authenticate,
+  authorize("super_admin", "admin"),
+  handleUploadErrors(profileImageUpload.single("profileImage")),
+  userController.uploadUserProfileImage,
 );
 
 module.exports = router;

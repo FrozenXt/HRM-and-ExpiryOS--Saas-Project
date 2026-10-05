@@ -1,3 +1,6 @@
+// Escapes regex special characters so a search term is matched literally.
+const escapeRegex = (v) => String(v).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
 class SearchHelper {
   constructor(payload = {}) {
     this.page = Math.max(Number(payload.page) || 1, 1);
@@ -34,6 +37,22 @@ class SearchHelper {
   getFilters() {
     const filters = {};
 
+    // Adds one operator to a field, keeping any operators already set on it.
+    // This is what lets "gte" + "lte" on the same field form a range.
+    const addOperator = (field, operator, value) => {
+      const current = filters[field];
+      const isOperatorObject =
+        current &&
+        typeof current === "object" &&
+        !Array.isArray(current) &&
+        !(current instanceof Date) &&
+        !(current instanceof RegExp);
+
+      filters[field] = isOperatorObject
+        ? { ...current, [operator]: value }
+        : { [operator]: value };
+    };
+
     for (const item of this.fields) {
       const { field, operator, value } = item;
 
@@ -49,60 +68,52 @@ class SearchHelper {
           break;
 
         case "ne":
-          filters[mongoField] = {
-            $ne: value,
-          };
+          addOperator(mongoField, "$ne", value);
           break;
 
         case "gt":
-          filters[mongoField] = {
-            $gt: value,
-          };
+          addOperator(mongoField, "$gt", value);
           break;
 
         case "gte":
-          filters[mongoField] = {
-            $gte: value,
-          };
+          addOperator(mongoField, "$gte", value);
           break;
 
         case "lt":
-          filters[mongoField] = {
-            $lt: value,
-          };
+          addOperator(mongoField, "$lt", value);
           break;
 
         case "lte":
-          filters[mongoField] = {
-            $lte: value,
-          };
+          addOperator(mongoField, "$lte", value);
           break;
 
         case "contains":
           filters[mongoField] = {
-            $regex: value,
+            $regex: escapeRegex(value),
             $options: "i",
           };
           break;
 
         case "starts_with":
           filters[mongoField] = {
-            $regex: `^${value}`,
+            $regex: `^${escapeRegex(value)}`,
             $options: "i",
           };
           break;
 
         case "ends_with":
           filters[mongoField] = {
-            $regex: `${value}$`,
+            $regex: `${escapeRegex(value)}$`,
             $options: "i",
           };
           break;
 
         case "in":
-          filters[mongoField] = {
-            $in: Array.isArray(value) ? value : String(value).split(","),
-          };
+          addOperator(
+            mongoField,
+            "$in",
+            Array.isArray(value) ? value : String(value).split(","),
+          );
           break;
 
         default:

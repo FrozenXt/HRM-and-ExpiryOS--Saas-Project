@@ -19,12 +19,22 @@ class PlanRepository {
     };
   }
 
+  async findAllActive() {
+    return await Plan.find({ isActive: true }).sort({
+      monthlyPricePerEmployee: 1,
+    });
+  }
+
   async findById(id) {
     return await Plan.findById(id);
   }
 
   async findByName(name) {
     return await Plan.findOne({ name });
+  }
+
+  async findBySlug(slug) {
+    return await Plan.findOne({ slug });
   }
 
   async create(data) {

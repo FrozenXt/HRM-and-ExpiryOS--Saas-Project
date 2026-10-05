@@ -44,7 +44,8 @@ class PayrollService {
       employeeId,
       "Payroll not found",
     );
-    return doc;
+    const [enriched] = await payrollRepository.enrich([doc]);
+    return enriched;
   }
 
   // Admin/HR/Super Admin only — enforced at the route layer.

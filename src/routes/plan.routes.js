@@ -21,18 +21,28 @@ const router = express.Router();
  *           example: 3
  *         name:
  *           type: string
- *           example: Growth
- *         employeeLimit:
+ *           example: Business
+ *         slug:
+ *           type: string
+ *           example: business
+ *         monthlyPricePerEmployee:
  *           type: number
- *           example: 100
+ *           example: 50
+ *         yearlyPricePerEmployee:
+ *           type: number
+ *           example: 500
+ *         maxEmployees:
+ *           type: number
+ *           nullable: true
+ *           example: null
+ *         isCustomPricing:
+ *           type: boolean
+ *           example: false
  *         features:
  *           type: array
  *           items:
  *             type: string
  *           example: ["payroll", "attendance", "expense_claims"]
- *         monthlyPrice:
- *           type: number
- *           example: 49
  *         isActive:
  *           type: boolean
  *           example: true
@@ -82,7 +92,7 @@ const router = express.Router();
  *
  *               sort_field:
  *                 type: string
- *                 example: monthlyPrice
+ *                 example: monthlyPricePerEmployee
  *
  *               fields:
  *                 type: array
@@ -111,13 +121,13 @@ const router = express.Router();
  *
  *                     value:
  *                       type: string
- *                       example: Growth
+ *                       example: Business
  *
  *           example:
  *             page: 1
  *             limit: 20
  *             sort: ASC
- *             sort_field: monthlyPrice
+ *             sort_field: monthlyPricePerEmployee
  *             fields:
  *               - field: isActive
  *                 operator: eq
@@ -145,6 +155,28 @@ router.post(
 
 /**
  * @openapi
+ * /api/v1/plans/active:
+ *   get:
+ *     summary: List active plans
+ *     description: >
+ *       Returns every active plan, sorted by price. Open to any authenticated
+ *       user so Company Admins can browse plans when subscribing or upgrading.
+ *     tags:
+ *       - Plans
+ *     security:
+ *       - bearerAuth: []
+ *
+ *     responses:
+ *       200:
+ *         description: Active plans fetched successfully
+ *
+ *       401:
+ *         description: Authentication required or invalid access token
+ */
+router.get("/active", authenticate, planController.active);
+
+/**
+ * @openapi
  * /api/v1/plans:
  *   post:
  *     summary: Create a new plan
@@ -162,23 +194,36 @@ router.post(
  *             type: object
  *             required:
  *               - name
- *               - employeeLimit
- *               - monthlyPrice
+ *               - monthlyPricePerEmployee
+ *               - yearlyPricePerEmployee
  *             properties:
  *               name:
  *                 type: string
- *                 example: Growth
- *               employeeLimit:
+ *                 example: Business
+ *               slug:
+ *                 type: string
+ *                 description: Auto-generated from name if omitted.
+ *                 example: business
+ *               monthlyPricePerEmployee:
  *                 type: number
- *                 example: 100
+ *                 example: 50
+ *               yearlyPricePerEmployee:
+ *                 type: number
+ *                 example: 500
+ *               maxEmployees:
+ *                 type: number
+ *                 nullable: true
+ *                 description: Omit or set null for unlimited.
+ *                 example: null
+ *               isCustomPricing:
+ *                 type: boolean
+ *                 default: false
+ *                 description: Enterprise-style plans where totalAmount is set manually.
  *               features:
  *                 type: array
  *                 items:
  *                   type: string
  *                 example: ["payroll", "attendance", "expense_claims"]
- *               monthlyPrice:
- *                 type: number
- *                 example: 49
  *               isActive:
  *                 type: boolean
  *                 default: true
@@ -188,7 +233,7 @@ router.post(
  *         description: Plan created successfully
  *
  *       400:
- *         description: Invalid request data, or a plan with this name already exists
+ *         description: Invalid request data, or a plan with this name/slug already exists
  *
  *       401:
  *         description: Authentication required or invalid access token
@@ -265,14 +310,21 @@ router.get("/:id", authenticate, authorize("super_admin"), planController.show);
  *             properties:
  *               name:
  *                 type: string
- *               employeeLimit:
+ *               slug:
+ *                 type: string
+ *               monthlyPricePerEmployee:
  *                 type: number
+ *               yearlyPricePerEmployee:
+ *                 type: number
+ *               maxEmployees:
+ *                 type: number
+ *                 nullable: true
+ *               isCustomPricing:
+ *                 type: boolean
  *               features:
  *                 type: array
  *                 items:
  *                   type: string
- *               monthlyPrice:
- *                 type: number
  *               isActive:
  *                 type: boolean
  *
@@ -303,7 +355,7 @@ router.put(
  *     summary: Delete a plan
  *     description: >
  *       Delete a plan by its ID. Super Admin only. Refused with 409 if any
- *       company is still assigned to this plan.
+ *       company subscription still references this plan.
  *     tags:
  *       - Plans
  *     security:
@@ -332,7 +384,7 @@ router.put(
  *         description: Plan not found
  *
  *       409:
- *         description: Plan is still assigned to one or more companies
+ *         description: Plan is still assigned to one or more company subscriptions
  */
 router.delete(
   "/:id",

@@ -3,7 +3,7 @@ import { Icon } from "../components/Icon";
 import StatCard from "../components/StatCard";
 import AttendanceFormModal from "../components/AttendanceFormModal";
 import { useGeolocation } from "../hooks/useGeolocation";
-import { listOptions } from "../services/employeeService";
+import { FILE_BASE } from "../config";
 import { getCurrentUser } from "../utils/auth";
 import {
   getAttendance,
@@ -11,10 +11,43 @@ import {
   checkIn,
   checkOut,
   getMyEmployee,
+  getDayStatus,
 } from "../services/attendanceService";
 
-const idOf = (v) => v?._id || v || "";
-const fullName = (u) => (u ? `${u.firstName} ${u.lastName || ""}`.trim() : "");
+const AVATAR_COLORS = [
+  "#3b82f6",
+  "#10b981",
+  "#0ea5e9",
+  "#f97316",
+  "#14b8a6",
+  "#ec4899",
+  "#22c55e",
+  "#64748b",
+  "#7c3aed",
+  "#06b6d4",
+];
+
+const pad = (n) => String(n).padStart(2, "0");
+
+// Local calendar date <-> "YYYY-MM-DD" key (matches the <input type="date"> value).
+const toKey = (d) =>
+  `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const fromKey = (key) => {
+  const [y, m, d] = key.split("-").map(Number);
+  return new Date(y, m - 1, d);
+};
+const startOfDayFromKey = (key) => fromKey(key);
+const endOfDayFromKey = (key) => {
+  const d = fromKey(key);
+  d.setHours(23, 59, 59, 999);
+  return d;
+};
+const addDays = (key, n) => {
+  const d = fromKey(key);
+  d.setDate(d.getDate() + n);
+  return toKey(d);
+};
+
 const fmtDate = (d) =>
   d
     ? new Date(d).toLocaleDateString("en-US", {
@@ -24,12 +57,28 @@ const fmtDate = (d) =>
         year: "numeric",
       })
     : "-";
+const fmtKeyLong = (key) =>
+  fromKey(key).toLocaleDateString("en-US", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
 const fmtTime = (d) =>
   d
     ? new Date(d).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
     : "-";
 const sameDay = (a, b) =>
   new Date(a).toDateString() === new Date(b).toDateString();
+
+const initials = (name = "") =>
+  name
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((w) => w[0])
+    .join("")
+    .toUpperCase() || "?";
 
 const hoursBetween = (a, b) => {
   if (!a || !b) return "-";
@@ -43,6 +92,15 @@ const STATUS_BADGE = {
   half_day: { cls: "plan-business", label: "Half day" },
   absent: { cls: "warning", label: "Absent" },
 };
+
+const DATE_PRESETS = [
+  { value: "today", label: "Today" },
+  { value: "yesterday", label: "Yesterday" },
+  { value: "week", label: "Last 7 days" },
+  { value: "month", label: "This month" },
+  { value: "custom", label: "Pick a date / range" },
+  { value: "all", label: "All dates" },
+];
 
 const mapLink = (loc) =>
   loc?.latitude != null
@@ -58,6 +116,38 @@ function useClock() {
   return now;
 }
 
+// Photo if there is one, otherwise coloured initials. Falls back to the
+// initials if the image fails to load.
+function PersonAvatar({ name, profileImage, color, size = 34 }) {
+  const [failed, setFailed] = useState(false);
+
+  if (profileImage && !failed) {
+    return (
+      <img
+        src={`${FILE_BASE}${profileImage}`}
+        alt={name}
+        onError={() => setFailed(true)}
+        style={{
+          width: size,
+          height: size,
+          borderRadius: "50%",
+          objectFit: "cover",
+          flexShrink: 0,
+        }}
+      />
+    );
+  }
+
+  return (
+    <span
+      className="co-avatar"
+      style={{ background: color, borderRadius: "50%" }}
+    >
+      {initials(name)}
+    </span>
+  );
+}
+
 export default function Attendance() {
   const me = getCurrentUser();
   const role = me?.role;
@@ -68,6 +158,10 @@ export default function Attendance() {
   const now = useClock();
   const { permission, getPosition } = useGeolocation();
 
+  // Changes only when the calendar day changes, so the "Today" list rolls
+  // over to the new day by itself after midnight.
+  const todayKey = toKey(now);
+
   const [records, setRecords] = useState([]);
   const [pagination, setPagination] = useState({
     page: 1,
@@ -75,16 +169,21 @@ export default function Attendance() {
     total: 0,
     total_pages: 0,
   });
-  const [names, setNames] = useState({ employees: {}, users: {} });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [search, setSearch] = useState("");
 
+  // date filter: defaults to today only
+  const [datePreset, setDatePreset] = useState("today");
+  const [customFrom, setCustomFrom] = useState(todayKey);
+  const [customTo, setCustomTo] = useState(todayKey);
+
   // self check-in state
   const [myEmployee, setMyEmployee] = useState(null);
   const [profileMissing, setProfileMissing] = useState(false);
   const [today, setToday] = useState(null);
+  const [dayStatus, setDayStatus] = useState(null); // holiday / week-off info
   const [busy, setBusy] = useState(null); // "in" | "out" | "locate" | null
   const [geoMsg, setGeoMsg] = useState("");
   const [actionMsg, setActionMsg] = useState("");
@@ -92,6 +191,57 @@ export default function Attendance() {
 
   const [modalMode, setModalMode] = useState(null);
   const [selected, setSelected] = useState(null);
+
+  /* ---------- date range ---------- */
+  // { startKey, endKey } as "YYYY-MM-DD", or null for "all dates".
+  const range = useMemo(() => {
+    switch (datePreset) {
+      case "today":
+        return { startKey: todayKey, endKey: todayKey };
+      case "yesterday": {
+        const y = addDays(todayKey, -1);
+        return { startKey: y, endKey: y };
+      }
+      case "week":
+        return { startKey: addDays(todayKey, -6), endKey: todayKey };
+      case "month": {
+        const t = fromKey(todayKey);
+        return {
+          startKey: toKey(new Date(t.getFullYear(), t.getMonth(), 1)),
+          endKey: todayKey,
+        };
+      }
+      case "custom": {
+        const a = customFrom || todayKey;
+        const b = customTo || a;
+        return a <= b ? { startKey: a, endKey: b } : { startKey: b, endKey: a };
+      }
+      default:
+        return null; // all
+    }
+  }, [datePreset, customFrom, customTo, todayKey]);
+
+  const startKey = range?.startKey || null;
+  const endKey = range?.endKey || null;
+
+  const rangeLabel = !range
+    ? "All dates"
+    : startKey === endKey
+      ? startKey === todayKey
+        ? `Today · ${fmtKeyLong(startKey)}`
+        : fmtKeyLong(startKey)
+      : `${fmtKeyLong(startKey)} – ${fmtKeyLong(endKey)}`;
+
+  const rangeIsToday = startKey === todayKey && endKey === todayKey;
+
+  const changePreset = (value) => {
+    setDatePreset(value);
+    if (value === "custom") {
+      // start the custom picker on the day currently being viewed
+      setCustomFrom(startKey || todayKey);
+      setCustomTo(endKey || todayKey);
+    }
+  };
 
   /* ---------- data ---------- */
   const fetchRecords = useCallback(
@@ -103,6 +253,18 @@ export default function Attendance() {
         if (statusFilter !== "all") {
           fields.push({ field: "status", operator: "eq", value: statusFilter });
         }
+        if (startKey && endKey) {
+          fields.push({
+            field: "date",
+            operator: "gte",
+            value: startOfDayFromKey(startKey).toISOString(),
+          });
+          fields.push({
+            field: "date",
+            operator: "lte",
+            value: endOfDayFromKey(endKey).toISOString(),
+          });
+        }
         const result = await getAttendance({ page, limit: 20, fields });
         setRecords(result.data.data.data);
         setPagination(result.data.data.pagination);
@@ -112,27 +274,14 @@ export default function Attendance() {
         setLoading(false);
       }
     },
-    [statusFilter],
+    [statusFilter, startKey, endKey],
   );
 
+  // Runs on first load and whenever the status, the date range, or the
+  // calendar day (for the "Today" view) changes.
   useEffect(() => {
     fetchRecords(1);
   }, [fetchRecords]);
-
-  // employee + user names (attendance stores only the employee id)
-  useEffect(() => {
-    if (isStaff) return;
-    Promise.allSettled([listOptions("employees"), listOptions("users")]).then(
-      ([e, u]) => {
-        const emps = e.status === "fulfilled" ? e.value : [];
-        const usrs = u.status === "fulfilled" ? u.value : [];
-        setNames({
-          employees: Object.fromEntries(emps.map((x) => [x._id, x])),
-          users: Object.fromEntries(usrs.map((x) => [x._id, x])),
-        });
-      },
-    );
-  }, [isStaff]);
 
   const loadToday = useCallback(async (employee) => {
     try {
@@ -158,6 +307,19 @@ export default function Attendance() {
       })
       .catch(() => setProfileMissing(true));
   }, [canCheckIn, loadToday]);
+
+  // New day: clear yesterday's check-in card so the buttons reset.
+  useEffect(() => {
+    if (myEmployee) loadToday(myEmployee);
+  }, [todayKey, myEmployee, loadToday]);
+
+  // Is today a holiday or a week-off day? Re-checked when the day changes.
+  useEffect(() => {
+    if (!canCheckIn) return;
+    getDayStatus()
+      .then((res) => setDayStatus(res.data.data))
+      .catch(() => setDayStatus(null));
+  }, [canCheckIn, todayKey]);
 
   /* ---------- check in / out ---------- */
   const enableLocation = async () => {
@@ -214,28 +376,35 @@ export default function Attendance() {
   };
 
   /* ---------- view helpers ---------- */
-  const employeeName = (rec) => {
-    const emp =
-      typeof rec.employeeId === "object"
-        ? rec.employeeId
-        : names.employees[rec.employeeId];
-    const user =
-      typeof emp?.userId === "object"
-        ? emp.userId
-        : names.users[idOf(emp?.userId)];
-    return fullName(user) || "-";
+  // Everything comes from the list response (employee, user, department...).
+  const view = (rec) => {
+    const emp = rec.employee || null;
+    const name = rec.employeeName || emp?.name || "-";
+    return {
+      name,
+      email: emp?.email || "",
+      department: emp?.department || "",
+      designation: emp?.designation || "",
+      profileImage: rec.profileImage || emp?.profileImage || null,
+    };
   };
 
-  const rows = useMemo(
-    () =>
-      records
-        .map((r) => ({ r, name: employeeName(r) }))
-        .filter(({ name }) =>
-          name.toLowerCase().includes(search.toLowerCase()),
-        ),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [records, names, search],
-  );
+  const rows = useMemo(() => {
+    const q = search.toLowerCase();
+    return records
+      .filter((r) => {
+        if (!startKey || !endKey) return true;
+        const k = toKey(new Date(r.date));
+        return k >= startKey && k <= endKey;
+      })
+      .map((r) => ({ r, v: view(r) }))
+      .filter(
+        ({ v }) =>
+          v.name.toLowerCase().includes(q) ||
+          v.email.toLowerCase().includes(q) ||
+          v.department.toLowerCase().includes(q),
+      );
+  }, [records, search, startKey, endKey]);
 
   const count = (status) => records.filter((r) => r.status === status).length;
   const from = pagination.total
@@ -245,7 +414,18 @@ export default function Attendance() {
 
   const checkedIn = !!today?.checkIn;
   const checkedOut = !!today?.checkOut;
-  const blocked = permission === "denied" || permission === "unsupported";
+
+  // Holiday or week-off: check-in is not allowed (the server enforces it too).
+  const offDay = !!dayStatus && dayStatus.allowed === false;
+  const locationBlocked =
+    permission === "denied" || permission === "unsupported";
+
+  // The Date column is only useful when more than one day can be shown.
+  const singleDay = !!range && startKey === endKey;
+  const showDateCol = !singleDay;
+
+  const colCount =
+    (showDateCol ? 1 : 0) + (isStaff ? 0 : 1) + 5 + (canManage ? 1 : 0);
 
   return (
     <>
@@ -347,7 +527,10 @@ export default function Attendance() {
                 {!checkedIn && (
                   <button
                     className="btn primary"
-                    disabled={!myEmployee || busy || blocked}
+                    disabled={
+                      !myEmployee || !!busy || locationBlocked || offDay
+                    }
+                    title={offDay ? dayStatus.message : ""}
                     onClick={() => handleAction("in")}
                   >
                     <Icon name="clock" size={16} />
@@ -357,7 +540,7 @@ export default function Attendance() {
                 {checkedIn && !checkedOut && (
                   <button
                     className="btn primary"
-                    disabled={busy || blocked}
+                    disabled={!!busy || locationBlocked}
                     onClick={() => handleAction("out")}
                   >
                     <Icon name="clock" size={16} />
@@ -368,6 +551,23 @@ export default function Attendance() {
                   <span className="badge success">Done for today</span>
                 )}
               </div>
+            </div>
+          )}
+
+          {/* Holiday / week-off notice */}
+          {!profileMissing && offDay && !checkedIn && (
+            <div
+              className="badge warning"
+              style={{
+                display: "block",
+                padding: 12,
+                whiteSpace: "normal",
+                lineHeight: 1.5,
+                marginTop: 16,
+              }}
+            >
+              {dayStatus.type === "holiday" ? "🎉 " : "🛋️ "}
+              {dayStatus.message}
             </div>
           )}
 
@@ -403,7 +603,8 @@ export default function Attendance() {
                 </div>
               )}
               {(permission === "prompt" || permission === "unknown") &&
-                !checkedOut && (
+                !checkedOut &&
+                !offDay && (
                   <div
                     style={{
                       display: "flex",
@@ -418,14 +619,14 @@ export default function Attendance() {
                     </span>
                     <button
                       className="btn btn-sm"
-                      disabled={busy}
+                      disabled={!!busy}
                       onClick={enableLocation}
                     >
                       {busy === "locate" ? "Locating..." : "Enable location"}
                     </button>
                   </div>
                 )}
-              {permission === "granted" && !checkedOut && (
+              {permission === "granted" && !checkedOut && !offDay && (
                 <span className="muted" style={{ fontSize: 13 }}>
                   Location access is on. It will be attached to your check-in
                   and check-out.
@@ -490,12 +691,14 @@ export default function Attendance() {
           <div>
             <h2>Attendance Records</h2>
             <p>
+              {rangeLabel}
+              {" · "}
               {isStaff
                 ? "Your attendance history."
                 : "Daily attendance for your company."}
             </p>
           </div>
-          <div className="panel-tools">
+          <div className="panel-tools" style={{ flexWrap: "wrap" }}>
             {!isStaff && (
               <div className="search-box">
                 <Icon name="search" size={16} />
@@ -507,6 +710,50 @@ export default function Attendance() {
                 />
               </div>
             )}
+
+            <select
+              className="lang-btn"
+              value={datePreset}
+              onChange={(e) => changePreset(e.target.value)}
+              aria-label="Filter by date"
+            >
+              {DATE_PRESETS.map((p) => (
+                <option key={p.value} value={p.value}>
+                  {p.label}
+                </option>
+              ))}
+            </select>
+
+            {datePreset === "custom" && (
+              <>
+                <input
+                  type="date"
+                  className="lang-btn"
+                  value={customFrom}
+                  max={todayKey}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setCustomFrom(v);
+                    // keep "to" in step until the user sets a range
+                    if (!customTo || customTo < v) setCustomTo(v);
+                  }}
+                  aria-label="From date"
+                />
+                <span className="muted" style={{ fontSize: 12.5 }}>
+                  to
+                </span>
+                <input
+                  type="date"
+                  className="lang-btn"
+                  value={customTo}
+                  min={customFrom || undefined}
+                  max={todayKey}
+                  onChange={(e) => setCustomTo(e.target.value)}
+                  aria-label="To date"
+                />
+              </>
+            )}
+
             <select
               className="lang-btn"
               value={statusFilter}
@@ -534,7 +781,7 @@ export default function Attendance() {
               <table>
                 <thead>
                   <tr>
-                    <th>Date</th>
+                    {showDateCol && <th>Date</th>}
                     {!isStaff && <th>Employee</th>}
                     <th>Check In</th>
                     <th>Check Out</th>
@@ -548,26 +795,64 @@ export default function Attendance() {
                   {rows.length === 0 && (
                     <tr>
                       <td
-                        colSpan={
-                          5 + (isStaff ? 0 : 1) + 1 + (canManage ? 1 : 0)
-                        }
+                        colSpan={colCount}
                         className="muted"
                         style={{ textAlign: "center", padding: 28 }}
                       >
-                        No attendance records found.
+                        {rangeIsToday
+                          ? offDay
+                            ? `No attendance today. ${dayStatus.message.replace(" Check-in is not available.", "")}`
+                            : "No attendance recorded yet today."
+                          : "No attendance records for this period."}
+                        {datePreset !== "all" && (
+                          <>
+                            {" "}
+                            <button
+                              type="button"
+                              className="btn btn-sm"
+                              style={{ marginLeft: 8 }}
+                              onClick={() => changePreset("week")}
+                            >
+                              View last 7 days
+                            </button>
+                          </>
+                        )}
                       </td>
                     </tr>
                   )}
-                  {rows.map(({ r, name }) => {
+                  {rows.map(({ r, v }, i) => {
                     const badge =
                       STATUS_BADGE[r.status] || STATUS_BADGE.present;
                     const inLink = mapLink(r.checkInLocation);
                     const outLink = mapLink(r.checkOutLocation);
+                    const sub = [v.department, v.designation]
+                      .filter(Boolean)
+                      .join(" · ");
                     return (
                       <tr key={r._id}>
-                        <td>{fmtDate(r.date)}</td>
+                        {showDateCol && <td>{fmtDate(r.date)}</td>}
                         {!isStaff && (
-                          <td style={{ fontWeight: 500 }}>{name}</td>
+                          <td>
+                            <div className="company-cell">
+                              <PersonAvatar
+                                key={v.profileImage || r._id}
+                                name={v.name}
+                                profileImage={v.profileImage}
+                                color={AVATAR_COLORS[i % AVATAR_COLORS.length]}
+                              />
+                              <div>
+                                <div style={{ fontWeight: 500 }}>{v.name}</div>
+                                {(v.email || sub) && (
+                                  <div
+                                    className="muted"
+                                    style={{ fontSize: 12, fontWeight: 400 }}
+                                  >
+                                    {sub || v.email}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </td>
                         )}
                         <td>{fmtTime(r.checkIn)}</td>
                         <td>{fmtTime(r.checkOut)}</td>
@@ -576,6 +861,15 @@ export default function Attendance() {
                           <span className={`badge ${badge.cls}`}>
                             {badge.label}
                           </span>
+                          {r.autoCheckedOut && (
+                            <span
+                              className="muted"
+                              style={{ fontSize: 11.5, marginLeft: 6 }}
+                              title="Checked out automatically"
+                            >
+                              auto
+                            </span>
+                          )}
                         </td>
                         <td>
                           <div

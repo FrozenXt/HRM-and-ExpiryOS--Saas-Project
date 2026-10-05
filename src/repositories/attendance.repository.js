@@ -1,5 +1,5 @@
-// repositories/attendance.repository.js
 const Attendance = require("../models/attendance.model");
+const { attachEmployeeInfo } = require("../helpers/employee-info.helper");
 
 class AttendanceRepository {
   async findAll(searchHelper, scopeFilter) {
@@ -13,7 +13,7 @@ class AttendanceRepository {
       Attendance.countDocuments(filters),
     ]);
 
-    return { data, total };
+    return { data: await attachEmployeeInfo(data), total };
   }
 
   async findById(id, scopeFilter) {
@@ -41,6 +41,30 @@ class AttendanceRepository {
 
   async delete(id, scopeFilter) {
     return await Attendance.findOneAndDelete({ _id: id, ...scopeFilter });
+  }
+
+  async findOpenCheckIns(companyId, date) {
+    return await Attendance.find({
+      companyId,
+      date,
+      checkIn: { $ne: null },
+      checkOut: null,
+    });
+  }
+
+  async autoCloseMany(ids, checkOutTime) {
+    if (!ids.length) return { modifiedCount: 0 };
+    return await Attendance.updateMany(
+      { _id: { $in: ids } },
+      { checkOut: checkOutTime, autoCheckedOut: true },
+    );
+  }
+  async findOpenForEmployee(employeeId) {
+    return await Attendance.findOne({
+      employeeId,
+      checkIn: { $ne: null, $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) },
+      checkOut: null,
+    }).sort({ checkIn: -1 });
   }
 }
 

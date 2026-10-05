@@ -1,6 +1,15 @@
 // src/hooks/useBranding.js
+//
+// Colors are resolved per logged-in user, in this order:
+//   1. the user's personal choice   (localStorage "wp-user-prefs:<userId>")
+//   2. their company's default      (cached "wp-branding:<companyId>")
+//   3. the app's built-in CSS defaults
+//
+// Nothing here uses a shared "current company" pointer any more, so one
+// login can never pick up another login's colors.
 import { useEffect } from "react";
 import { getCompanySettings } from "../services/settingsService";
+import { getCurrentUser, currentUserId } from "../utils/auth";
 
 /* ---------- color helpers ---------- */
 
@@ -54,14 +63,91 @@ function isDark(hex) {
   return lum < 0.62;
 }
 
-/* ---------- core: write CSS variables on <html> ---------- */
-const brandingKey = (companyId) =>
-  companyId ? `wp-branding:${companyId}` : "wp-branding";
-const themeKey = (companyId) =>
-  companyId ? `wp-theme:${companyId}` : "wp-theme";
+/* ---------- storage ---------- */
 
-/* ---------- applyBranding: takes companyId, writes per-company cache ---------- */
-export function applyBranding(primaryColor, secondaryColor, companyId) {
+const companyBrandKey = (companyId) => `wp-branding:${companyId}`;
+const personalKey = (userId) => `wp-user-prefs:${userId}`;
+
+const read = (key) => {
+  try {
+    return JSON.parse(localStorage.getItem(key));
+  } catch {
+    return null;
+  }
+};
+const write = (key, value) => {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    /* ignore */
+  }
+};
+
+// Who is logged in right now (user id + their own company id).
+export function getSessionIds() {
+  const me = getCurrentUser();
+  const company = me?.companyId;
+  return {
+    userId: currentUserId(),
+    companyId: company ? String(company._id || company) : null,
+  };
+}
+
+/* ---- personal (per-user) preferences: { primaryColor, secondaryColor, theme } ---- */
+
+export const getPersonalPrefs = (userId = getSessionIds().userId) =>
+  userId ? read(personalKey(userId)) : null;
+
+export function savePersonalPrefs(userId, patch) {
+  if (!userId) return;
+  write(personalKey(userId), {
+    ...(read(personalKey(userId)) || {}),
+    ...patch,
+  });
+}
+
+export function clearPersonalPrefs(userId) {
+  if (!userId) return;
+  try {
+    localStorage.removeItem(personalKey(userId));
+  } catch {
+    /* ignore */
+  }
+}
+
+/* ---- company default, cached so colors paint before the fetch returns ---- */
+
+export function cacheCompanyBranding(companyId, branding) {
+  if (!companyId || !branding) return;
+  write(companyBrandKey(companyId), {
+    primaryColor: branding.primaryColor,
+    secondaryColor: branding.secondaryColor,
+    defaultTheme: branding.defaultTheme,
+  });
+}
+
+export const getCachedCompanyBranding = (companyId) =>
+  companyId ? read(companyBrandKey(companyId)) : null;
+
+/* ---------- write CSS variables on <html> ---------- */
+
+const BRAND_VARS = [
+  "--blue",
+  "--blue-dark",
+  "--blue-soft",
+  "--brand-secondary",
+  "--brand-secondary-dark",
+  "--brand-on-primary",
+];
+
+// Back to the stylesheet's built-in colors.
+export function resetBranding() {
+  const style = document.documentElement.style;
+  BRAND_VARS.forEach((v) => style.removeProperty(v));
+}
+
+// Paints the given colors. (Third argument kept so old calls still work; it is ignored.)
+export function applyBranding(primaryColor, secondaryColor) {
   if (!primaryColor || !/^#[0-9a-fA-F]{6}$/.test(primaryColor)) return;
 
   const isDarkTheme =
@@ -86,62 +172,42 @@ export function applyBranding(primaryColor, secondaryColor, companyId) {
     "--brand-on-primary",
     isDark(primaryColor) ? "#ffffff" : "#0f172a",
   );
-
-  // Only cache when we know which company this belongs to
-  if (companyId) {
-    try {
-      localStorage.setItem(
-        brandingKey(companyId),
-        JSON.stringify({
-          primaryColor,
-          secondaryColor: secondaryColor || primaryColor,
-        }),
-      );
-    } catch {
-      /* ignore */
-    }
-  }
 }
 
-/* ---------- applyTheme: same idea ---------- */
-export function applyTheme(theme, companyId) {
-  const next = theme === "dark" ? "dark" : "light";
-  document.documentElement.setAttribute("data-theme", next);
-  if (companyId) {
-    try {
-      localStorage.setItem(themeKey(companyId), next);
-    } catch {
-      /* ignore */
-    }
-  }
+export function applyTheme(theme) {
+  document.documentElement.setAttribute(
+    "data-theme",
+    theme === "dark" ? "dark" : "light",
+  );
 }
 
-/* ---------- restore the cached branding/theme for a specific company ---------- */
-export function applyStoredBranding(companyId) {
-  try {
-    // If we don't know the company yet (e.g. right at boot),
-    // read the "last used company" pointer to guess.
-    const resolvedId =
-      companyId || localStorage.getItem("wp-current-company") || null;
+/* ---------- resolution: personal > company > defaults ---------- */
 
-    const raw = resolvedId
-      ? localStorage.getItem(brandingKey(resolvedId))
-      : null;
-    if (!raw) return;
-
-    const { primaryColor, secondaryColor } = JSON.parse(raw);
-    applyBranding(primaryColor, secondaryColor, resolvedId);
-
-    const savedTheme = resolvedId
-      ? localStorage.getItem(themeKey(resolvedId))
-      : null;
-    if (savedTheme) applyTheme(savedTheme, resolvedId);
-  } catch {
-    /* ignore */
-  }
+export function resolveBranding(companyBrand, userId = getSessionIds().userId) {
+  const p = getPersonalPrefs(userId) || {};
+  const c = companyBrand || {};
+  return {
+    primaryColor: p.primaryColor || c.primaryColor || null,
+    secondaryColor: p.secondaryColor || c.secondaryColor || null,
+    theme: p.theme || c.defaultTheme || null,
+  };
 }
 
-/* ---------- hook: resolves the "current" company for this user ---------- */
+// Paints the effective colors (does not touch light/dark; ThemeContext owns that).
+export function applyEffectiveBranding(companyBrand, userId) {
+  const r = resolveBranding(companyBrand, userId);
+  if (r.primaryColor) applyBranding(r.primaryColor, r.secondaryColor);
+  else resetBranding();
+  return r;
+}
+
+// Paint from cache for the logged-in user, with no network call.
+export function applyStoredBranding() {
+  const { userId, companyId } = getSessionIds();
+  applyEffectiveBranding(getCachedCompanyBranding(companyId), userId);
+}
+
+/* ---------- optional hook (kept for existing imports) ---------- */
 export function useBranding() {
   useEffect(() => {
     let cancelled = false;
@@ -150,39 +216,16 @@ export function useBranding() {
       try {
         const res = await getCompanySettings();
         if (cancelled) return;
-        const data = res?.data?.data || {};
-        const companyId = data.companyId || data._id || myCompanyId();
-
-        // Remember which company this browser is currently showing
-        if (companyId) {
-          localStorage.setItem("wp-current-company", companyId);
-        }
-
-        const b = data.branding || {};
-        if (b.primaryColor) {
-          applyBranding(b.primaryColor, b.secondaryColor, companyId);
-        }
-        if (b.defaultTheme) {
-          applyTheme(b.defaultTheme, companyId);
-        }
+        const b = res?.data?.data?.branding || {};
+        cacheCompanyBranding(getSessionIds().companyId, b);
+        applyEffectiveBranding(b);
       } catch {
         /* non-fatal */
       }
     })();
 
-    // Re-apply soft tint when the theme flips, for the current company
-    const observer = new MutationObserver(() => {
-      try {
-        const id = localStorage.getItem("wp-current-company");
-        if (!id) return;
-        const raw = localStorage.getItem(brandingKey(id));
-        if (!raw) return;
-        const { primaryColor, secondaryColor } = JSON.parse(raw);
-        applyBranding(primaryColor, secondaryColor, id);
-      } catch {
-        /* ignore */
-      }
-    });
+    // Re-tint the soft color when light/dark flips.
+    const observer = new MutationObserver(() => applyStoredBranding());
     observer.observe(document.documentElement, {
       attributes: true,
       attributeFilter: ["data-theme"],

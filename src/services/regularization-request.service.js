@@ -35,7 +35,8 @@ class RegularizationRequestService {
       employeeId,
       "Regularization request not found",
     );
-    return request;
+    const [enriched] = await regularizationRequestRepository.enrich([request]);
+    return enriched;
   }
 
   async createRequest(data, actingUser) {
@@ -97,6 +98,7 @@ class RegularizationRequestService {
       if (Object.keys(attendanceUpdate).length > 0) {
         await attendanceRepository.update(
           request.attendanceId,
+          { companyId: request.companyId },
           attendanceUpdate,
         );
       }

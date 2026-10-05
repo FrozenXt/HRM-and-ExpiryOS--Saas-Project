@@ -1,9 +1,22 @@
 const planRepository = require("../repositories/plan.repository");
-const companyRepository = require("../repositories/company.repository");
+const subscriptionRepository = require("../repositories/subscription.repository");
+
+function slugify(text) {
+  return text
+    .toString()
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "");
+}
 
 class PlanService {
   async getPlans(searchHelper) {
     return await planRepository.findAll(searchHelper);
+  }
+
+  async getActivePlans() {
+    return await planRepository.findAllActive();
   }
 
   async getPlanById(id) {
@@ -23,7 +36,14 @@ class PlanService {
       throw new Error("A plan with this name already exists");
     }
 
-    return await planRepository.create(data);
+    const slug = slugify(data.slug || data.name);
+    const existingSlug = await planRepository.findBySlug(slug);
+
+    if (existingSlug) {
+      throw new Error("A plan with this slug already exists");
+    }
+
+    return await planRepository.create({ ...data, slug });
   }
 
   async updatePlan(id, data) {
@@ -35,7 +55,15 @@ class PlanService {
       }
     }
 
-    const plan = await planRepository.update(id, data);
+    const payload = { ...data };
+
+    if (data.slug) {
+      payload.slug = slugify(data.slug);
+    } else if (data.name) {
+      payload.slug = slugify(data.name);
+    }
+
+    const plan = await planRepository.update(id, payload);
 
     if (!plan) {
       throw new Error("Plan not found");
@@ -46,13 +74,13 @@ class PlanService {
 
   async deletePlan(id) {
     // Mongo has no foreign-key constraints, so we have to check this
-    // ourselves — otherwise a Company can be left pointing at a Plan
-    // that no longer exists.
-    const isPlanInUse = await companyRepository.existsByPlanId(id);
+    // ourselves — otherwise a company Subscription can be left pointing at a
+    // Plan that no longer exists.
+    const isPlanInUse = await subscriptionRepository.existsByPlanId(id);
 
     if (isPlanInUse) {
       throw new Error(
-        "This plan is assigned to one or more companies and cannot be deleted",
+        "This plan has active company subscriptions and cannot be deleted",
       );
     }
 
@@ -63,6 +91,28 @@ class PlanService {
     }
 
     return plan;
+  }
+
+  // Ensures the Free plan exists. Call this once at app boot (see
+  // INTEGRATION.md) and it's also called defensively whenever a company
+  // needs a Free subscription and the plan happens to be missing.
+  async getOrCreateFreePlan() {
+    let freePlan = await planRepository.findBySlug("free");
+
+    if (!freePlan) {
+      freePlan = await planRepository.create({
+        name: "Free",
+        slug: "free",
+        monthlyPricePerEmployee: 0,
+        yearlyPricePerEmployee: 0,
+        maxEmployees: 10,
+        isCustomPricing: false,
+        features: ["payroll", "attendance", "expense_claims"],
+        isActive: true,
+      });
+    }
+
+    return freePlan;
   }
 }
 

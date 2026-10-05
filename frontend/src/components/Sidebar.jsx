@@ -33,14 +33,28 @@ const TOP_ITEMS = [
     label: "Users",
     icon: "users",
     path: "/users",
-    roles: ["super_admin"],
+    roles: ["super_admin", "admin", "hr"],
   },
   {
     id: "plans",
-    label: "Plans & Subscriptions",
+    label: "Plans",
     icon: "list",
     path: "/plans",
     roles: ["super_admin"],
+  },
+  {
+    id: "subscriptions",
+    label: "Subscriptions",
+    icon: "list",
+    path: "/subscriptions",
+    roles: ["super_admin"],
+  },
+  {
+    id: "my-subscription",
+    label: "My Subscription",
+    icon: "dollar",
+    path: "/my-subscription",
+    roles: ["admin"],
   },
   {
     id: "system-settings",
@@ -112,7 +126,7 @@ const MANAGEMENT_GROUPS = [
         label: "Events",
         icon: "calendar",
         path: "/events",
-        roles: ["super_admin", "admin", "hr"],
+        roles: ["super_admin", "admin", "hr", "staff"],
       },
       {
         id: "announcements",
@@ -140,7 +154,49 @@ const MANAGEMENT_GROUPS = [
         label: "Regularization Requests",
         icon: "edit",
         path: "/regularization-requests",
+        roles: ["super_admin", "admin", "hr", "staff"],
+      },
+      {
+        id: "shifts",
+        label: "Shifts",
+        icon: "clock",
+        path: "/shifts",
         roles: ["super_admin", "admin", "hr"],
+      },
+      {
+        id: "geofence-zones",
+        label: "Geofence Zones",
+        icon: "globe",
+        path: "/geofence-zones",
+        roles: ["super_admin", "admin", "hr", "staff"],
+      },
+      {
+        id: "device-sessions",
+        label: "Device Sessions",
+        icon: "activity",
+        path: "/device-sessions",
+        roles: ["super_admin", "admin", "hr", "staff"],
+      },
+      {
+        id: "monitoring",
+        label: "Monitoring",
+        icon: "shield",
+        path: "/monitoring",
+        roles: ["super_admin", "admin", "hr", "staff"],
+      },
+      {
+        id: "monitoring-policy",
+        label: "Monitoring Policy",
+        icon: "shield",
+        path: "/monitoring-policy",
+        roles: ["super_admin", "admin", "hr"],
+      },
+      {
+        id: "onboarding-tasks",
+        label: "Onboarding Tasks",
+        icon: "list",
+        path: "/onboarding-tasks",
+        roles: ["super_admin", "admin", "hr", "staff"],
       },
     ],
   },
@@ -243,6 +299,20 @@ const MANAGEMENT_GROUPS = [
     ],
   },
   {
+    id: "performance",
+    label: "Performance",
+    icon: "trending",
+    items: [
+      {
+        id: "performance-reviews",
+        label: "Performance Reviews",
+        icon: "barChart",
+        path: "/performance-reviews",
+        roles: ["super_admin", "admin", "hr", "staff"],
+      },
+    ],
+  },
+  {
     id: "assets",
     label: "Assets",
     icon: "briefcase",
@@ -314,7 +384,7 @@ export default function Sidebar({ open, onClose }) {
 
   const isSuperAdmin = role === "super_admin";
   const showLogo = !isSuperAdmin && !!logoFullUrl;
-  const brandName = isSuperAdmin ? "WorkPulse" : companyName || "WorkPulse";
+  const brandName = isSuperAdmin ? "SewaRo" : companyName || "SewaRo";
   const brandSub = isSuperAdmin
     ? "HR Management System"
     : companyName

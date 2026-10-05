@@ -12,8 +12,6 @@ class SalaryStructureService {
     return employee._id;
   }
 
-  // Staff can view their own salary — nobody else's, even within the
-  // same company. Admin/HR see the whole company.
   async getAll(searchHelper, actingUser) {
     const employeeId = await this._getActingEmployeeId(actingUser);
     const scopeFilters = TenantScope.scopeToOwnEmployee(
@@ -34,7 +32,8 @@ class SalaryStructureService {
       employeeId,
       "Salary structure not found",
     );
-    return doc;
+    const [enriched] = await salaryStructureRepository.enrich([doc]);
+    return enriched;
   }
 
   _validateWageTypeFields({ wageType, hourlyRate, dailyRate }) {

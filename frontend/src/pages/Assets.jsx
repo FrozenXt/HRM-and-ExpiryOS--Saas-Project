@@ -4,16 +4,41 @@ import { isSuperAdmin } from "../utils/auth";
 import StatCard from "../components/StatCard";
 import AssetFormModal from "../components/AssetFormModal";
 import AssignAssetModal from "../components/AssignAssetModal";
+import { FILE_BASE } from "../config";
 import { listOptions } from "../services/employeeService";
 import { getAssets, deleteAsset } from "../services/assetService";
 
+const AVATAR_COLORS = [
+  "#3b82f6",
+  "#10b981",
+  "#0ea5e9",
+  "#f97316",
+  "#14b8a6",
+  "#ec4899",
+  "#22c55e",
+  "#64748b",
+  "#7c3aed",
+  "#06b6d4",
+];
+
 const byId = (rows) => Object.fromEntries(rows.map((r) => [r._id, r]));
-const fullName = (u) => (u ? `${u.firstName} ${u.lastName || ""}`.trim() : "");
+
+const nameFrom = (u) =>
+  u && typeof u === "object" ? `${u.firstName} ${u.lastName || ""}`.trim() : "";
+
+const initials = (name = "") =>
+  name
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((w) => w[0])
+    .join("")
+    .toUpperCase() || "?";
 
 const readableLabel = (v = "") =>
   v
     .split("_")
-    .map((w) => w[0]?.toUpperCase() + w.slice(1))
+    .map((w) => (w ? w[0].toUpperCase() + w.slice(1) : ""))
     .join(" ");
 
 const statusBadge = {
@@ -23,14 +48,37 @@ const statusBadge = {
   retired: "plan-business",
 };
 
-const formatDate = (d) =>
-  d
-    ? new Date(d).toLocaleDateString("en-US", {
-        month: "short",
-        day: "2-digit",
-        year: "numeric",
-      })
-    : "-";
+// Photo if there is one, otherwise coloured initials. Falls back to the
+// initials if the image fails to load.
+function PersonAvatar({ name, profileImage, color, size = 34 }) {
+  const [failed, setFailed] = useState(false);
+
+  if (profileImage && !failed) {
+    return (
+      <img
+        src={`${FILE_BASE}${profileImage}`}
+        alt={name}
+        onError={() => setFailed(true)}
+        style={{
+          width: size,
+          height: size,
+          borderRadius: "50%",
+          objectFit: "cover",
+          flexShrink: 0,
+        }}
+      />
+    );
+  }
+
+  return (
+    <span
+      className="co-avatar"
+      style={{ background: color, borderRadius: "50%" }}
+    >
+      {initials(name)}
+    </span>
+  );
+}
 
 export default function Assets() {
   const superAdmin = isSuperAdmin();
@@ -41,7 +89,7 @@ export default function Assets() {
     total: 0,
     total_pages: 0,
   });
-  const [lookups, setLookups] = useState({ companies: {} });
+  const [companies, setCompanies] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
@@ -51,15 +99,13 @@ export default function Assets() {
   const [selected, setSelected] = useState(null);
   const [assigningAsset, setAssigningAsset] = useState(null);
 
-  const loadLookups = async () => {
+  // Only a super admin sees the Company column, so only they need this.
+  useEffect(() => {
     if (!superAdmin) return;
-    try {
-      const companies = await listOptions("companies");
-      setLookups({ companies: byId(companies) });
-    } catch {
-      /* names fall back to "-" */
-    }
-  };
+    listOptions("companies")
+      .then((rows) => setCompanies(byId(rows)))
+      .catch(() => {});
+  }, [superAdmin]);
 
   const fetchAssets = async (page = 1) => {
     try {
@@ -85,30 +131,35 @@ export default function Assets() {
   };
 
   useEffect(() => {
-    loadLookups();
-  }, []);
-
-  useEffect(() => {
     fetchAssets(1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [statusFilter, categoryFilter]);
 
+  // Everything comes from the list response; the nested currentAssignment
+  // is kept as a fallback. Only the company name needs the lookup.
   const view = (a) => {
     const company =
-      typeof a.companyId === "object"
-        ? a.companyId
-        : lookups.companies[a.companyId];
-    const holder = a.currentAssignment?.employeeId?.userId;
+      typeof a.companyId === "object" ? a.companyId : companies[a.companyId];
+    const ca = a.currentAssignment || null;
+    const emp = ca && typeof ca.employeeId === "object" ? ca.employeeId : null;
+    const user = emp && typeof emp.userId === "object" ? emp.userId : null;
     return {
       company: company?.legalName || "-",
-      holderName: holder ? fullName(holder) : null,
+      assigned: a.isAssigned ?? !!ca,
+      holderName: a.holderName || nameFrom(user) || "",
+      holderImage: a.holderImage || user?.profileImage || null,
+      holderEmail: a.holderEmail || user?.email || "",
+      holderDepartment: a.holderDepartment || emp?.departmentId?.name || "",
+      holderDesignation: a.holderDesignation || emp?.designationId?.name || "",
+      assignedBy: a.assignedByName || nameFrom(ca?.assignedBy) || "",
+      daysHeld: a.daysHeld,
     };
   };
 
   const rows = useMemo(
     () => assets.map((a) => ({ a, v: view(a) })),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [assets, lookups],
+    [assets, companies],
   );
 
   const filtered = rows.filter(({ a, v }) => {
@@ -116,7 +167,10 @@ export default function Assets() {
     return (
       a.assetTag?.toLowerCase().includes(q) ||
       a.name?.toLowerCase().includes(q) ||
-      v.company.toLowerCase().includes(q)
+      a.serialNumber?.toLowerCase().includes(q) ||
+      v.company.toLowerCase().includes(q) ||
+      v.holderName.toLowerCase().includes(q) ||
+      v.holderDepartment.toLowerCase().includes(q)
     );
   });
 
@@ -204,7 +258,7 @@ export default function Assets() {
               <Icon name="search" size={16} />
               <input
                 type="text"
-                placeholder="Search by tag, name or company..."
+                placeholder="Search by tag, name, holder or company..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
@@ -271,59 +325,114 @@ export default function Assets() {
                       </td>
                     </tr>
                   )}
-                  {filtered.map(({ a, v }, i) => (
-                    <tr key={a._id}>
-                      <td>{a.id_int ?? from + i}</td>
-                      <td>{a.assetTag}</td>
-                      <td>{a.name}</td>
-                      <td>{readableLabel(a.category)}</td>
-                      {superAdmin && <td>{v.company}</td>}
-                      <td>
-                        {v.holderName || (
-                          <span className="muted">Unassigned</span>
-                        )}
-                      </td>
-                      <td>
-                        <span
-                          className={`badge ${statusBadge[a.status] || "warning"}`}
-                        >
-                          {readableLabel(a.status)}
-                        </span>
-                      </td>
-                      <td>
-                        <div
-                          style={{ display: "flex", gap: 8, flexWrap: "wrap" }}
-                        >
-                          {a.status === "available" && (
-                            <button
-                              className="btn btn-sm primary"
-                              onClick={() => setAssigningAsset(a)}
+                  {filtered.map(({ a, v }, i) => {
+                    const sub = [v.holderDepartment, v.holderDesignation]
+                      .filter(Boolean)
+                      .join(" · ");
+                    const heldNote = [
+                      v.daysHeld != null ? `${v.daysHeld} d` : "",
+                      v.assignedBy ? `by ${v.assignedBy}` : "",
+                    ]
+                      .filter(Boolean)
+                      .join(" · ");
+                    return (
+                      <tr key={a._id}>
+                        <td>{a.id_int ?? from + i}</td>
+                        <td>{a.assetTag}</td>
+                        <td>
+                          <div style={{ fontWeight: 500 }}>{a.name}</div>
+                          {a.serialNumber && (
+                            <div
+                              className="muted"
+                              style={{ fontSize: 12, fontWeight: 400 }}
                             >
-                              <Icon name="userPlus" size={13} /> Assign
-                            </button>
+                              S/N {a.serialNumber}
+                            </div>
                           )}
-                          <button
-                            className="btn btn-sm"
-                            onClick={() => openEdit(a)}
+                        </td>
+                        <td>{readableLabel(a.category)}</td>
+                        {superAdmin && <td>{v.company}</td>}
+                        <td>
+                          {v.assigned && v.holderName ? (
+                            <div className="company-cell">
+                              <PersonAvatar
+                                key={v.holderImage || a._id}
+                                name={v.holderName}
+                                profileImage={v.holderImage}
+                                color={AVATAR_COLORS[i % AVATAR_COLORS.length]}
+                              />
+                              <div>
+                                <div style={{ fontWeight: 500 }}>
+                                  {v.holderName}
+                                </div>
+                                {(sub || v.holderEmail) && (
+                                  <div
+                                    className="muted"
+                                    style={{ fontSize: 12, fontWeight: 400 }}
+                                  >
+                                    {sub || v.holderEmail}
+                                  </div>
+                                )}
+                                {heldNote && (
+                                  <div
+                                    className="muted"
+                                    style={{ fontSize: 11.5, fontWeight: 400 }}
+                                  >
+                                    {heldNote}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          ) : (
+                            <span className="muted">Unassigned</span>
+                          )}
+                        </td>
+                        <td>
+                          <span
+                            className={`badge ${statusBadge[a.status] || "warning"}`}
                           >
-                            <Icon name="edit" size={13} /> Edit
-                          </button>
-                          <button
-                            className="btn btn-sm btn-danger"
-                            onClick={() => handleDelete(a)}
-                            disabled={!!a.currentAssignment}
-                            title={
-                              a.currentAssignment
-                                ? "Return the asset before deleting"
-                                : ""
-                            }
+                            {readableLabel(a.status)}
+                          </span>
+                        </td>
+                        <td>
+                          <div
+                            style={{
+                              display: "flex",
+                              gap: 8,
+                              flexWrap: "wrap",
+                            }}
                           >
-                            <Icon name="trash" size={14} /> Delete
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                            {a.status === "available" && (
+                              <button
+                                className="btn btn-sm primary"
+                                onClick={() => setAssigningAsset(a)}
+                              >
+                                <Icon name="userPlus" size={13} /> Assign
+                              </button>
+                            )}
+                            <button
+                              className="btn btn-sm"
+                              onClick={() => openEdit(a)}
+                            >
+                              <Icon name="edit" size={13} /> Edit
+                            </button>
+                            <button
+                              className="btn btn-sm btn-danger"
+                              onClick={() => handleDelete(a)}
+                              disabled={v.assigned}
+                              title={
+                                v.assigned
+                                  ? "Return the asset before deleting"
+                                  : ""
+                              }
+                            >
+                              <Icon name="trash" size={14} /> Delete
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

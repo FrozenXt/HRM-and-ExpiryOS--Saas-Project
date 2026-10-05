@@ -8,6 +8,7 @@ class AttendanceController extends BaseTenantController {
     super(attendanceService, "Attendance");
     this.checkIn = this.checkIn.bind(this);
     this.checkOut = this.checkOut.bind(this);
+    this.dayStatus = this.dayStatus.bind(this);
   }
 
   async checkIn(req, res) {
@@ -29,6 +30,15 @@ class AttendanceController extends BaseTenantController {
         req.body.location,
       );
       return successResponse(res, "Checked out successfully", record);
+    } catch (error) {
+      return errorResponse(res, error.message, error.statusCode || 400);
+    }
+  }
+
+  async dayStatus(req, res) {
+    try {
+      const status = await attendanceService.dayStatus(req.user);
+      return successResponse(res, "Day status fetched", status);
     } catch (error) {
       return errorResponse(res, error.message, error.statusCode || 400);
     }

@@ -1,8 +1,10 @@
 const Asset = require("../models/asset.model");
 
+const DAY = 24 * 60 * 60 * 1000;
+
 // Populates the asset's live status (currentAssignment) with the employee
-// holding it, so one GET /assets/list call tells you both the asset's own
-// fields AND who currently has it, if anyone — no second call needed.
+// holding it, including their photo, so one list call tells you both the
+// asset's own fields AND who currently has it, if anyone.
 function withDetails(query) {
   return query.populate({
     path: "currentAssignment",
@@ -10,14 +12,71 @@ function withDetails(query) {
     populate: [
       {
         path: "employeeId",
-        select: "userId departmentId id_int",
+        select: "userId departmentId designationId id_int",
         populate: [
-          { path: "userId", select: "firstName lastName email" },
+          {
+            path: "userId",
+            select: "firstName lastName email profileImage",
+          },
           { path: "departmentId", select: "name" },
+          { path: "designationId", select: "name" },
         ],
       },
-      { path: "assignedBy", select: "firstName lastName email" },
+      {
+        path: "assignedBy",
+        select: "firstName lastName email profileImage",
+      },
     ],
+  });
+}
+
+const fullName = (u) =>
+  u && typeof u === "object"
+    ? `${u.firstName} ${u.lastName || ""}`.trim()
+    : null;
+
+// Keeps every existing field (including the nested currentAssignment) and
+// adds flat holder / assigner fields.
+function shape(docs) {
+  return docs.map((doc) => {
+    // virtuals: true keeps the populated currentAssignment virtual.
+    const r =
+      typeof doc.toObject === "function"
+        ? doc.toObject({ virtuals: true })
+        : { ...doc };
+
+    const a =
+      r.currentAssignment && typeof r.currentAssignment === "object"
+        ? r.currentAssignment
+        : null;
+    const emp =
+      a?.employeeId && typeof a.employeeId === "object" ? a.employeeId : null;
+    const user =
+      emp?.userId && typeof emp.userId === "object" ? emp.userId : null;
+    const assigner =
+      a?.assignedBy && typeof a.assignedBy === "object" ? a.assignedBy : null;
+
+    return {
+      ...r,
+
+      isAssigned: !!a,
+
+      // current holder
+      holderName: fullName(user),
+      holderImage: user?.profileImage ?? null,
+      holderEmail: user?.email ?? null,
+      holderCode: emp?.id_int ?? null,
+      holderDepartment: emp?.departmentId?.name ?? null,
+      holderDesignation: emp?.designationId?.name ?? null,
+
+      // assignment details
+      assignedDate: a?.assignedDate ?? null,
+      assignedByName: fullName(assigner),
+      assignedByImage: assigner?.profileImage ?? null,
+      daysHeld: a?.assignedDate
+        ? Math.max(0, Math.floor((Date.now() - new Date(a.assignedDate)) / DAY))
+        : null,
+    };
   });
 }
 
@@ -33,11 +92,14 @@ class AssetRepository {
       ),
       Asset.countDocuments(filters),
     ]);
-    return { data, total };
+    return { data: shape(data), total };
   }
 
   async findById(id, extraFilters = {}) {
-    return await withDetails(Asset.findOne({ _id: id, ...extraFilters }));
+    const doc = await withDetails(Asset.findOne({ _id: id, ...extraFilters }));
+    if (!doc) return null;
+    const [shaped] = shape([doc]);
+    return shaped;
   }
 
   async findByAssetTag(companyId, assetTag) {

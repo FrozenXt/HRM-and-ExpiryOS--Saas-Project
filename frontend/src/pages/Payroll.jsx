@@ -5,6 +5,7 @@ import { isSuperAdmin, getCurrentUser } from "../utils/auth";
 import StatCard from "../components/StatCard";
 import PayrollFormModal from "../components/PayrollFormModal";
 import StatutoryDeductionModal from "../components/StatutoryDeductionModal";
+import { FILE_BASE } from "../config";
 import { listOptions } from "../services/employeeService";
 
 import {
@@ -17,8 +18,19 @@ import {
 
 const API_BASE = "http://localhost:5000/api/v1";
 
-const idOf = (v) => v?._id || v || "";
-const fullName = (u) => (u ? `${u.firstName} ${u.lastName || ""}`.trim() : "");
+const AVATAR_COLORS = [
+  "#3b82f6",
+  "#10b981",
+  "#0ea5e9",
+  "#f97316",
+  "#14b8a6",
+  "#ec4899",
+  "#22c55e",
+  "#64748b",
+  "#7c3aed",
+  "#06b6d4",
+];
+
 const initials = (name = "") =>
   name
     .trim()
@@ -37,6 +49,38 @@ const statusBadge = {
   released: "success",
 };
 
+// Photo if there is one, otherwise coloured initials. Falls back to the
+// initials if the image fails to load.
+function PersonAvatar({ name, profileImage, color, size = 34 }) {
+  const [failed, setFailed] = useState(false);
+
+  if (profileImage && !failed) {
+    return (
+      <img
+        src={`${FILE_BASE}${profileImage}`}
+        alt={name}
+        onError={() => setFailed(true)}
+        style={{
+          width: size,
+          height: size,
+          borderRadius: "50%",
+          objectFit: "cover",
+          flexShrink: 0,
+        }}
+      />
+    );
+  }
+
+  return (
+    <span
+      className="co-avatar"
+      style={{ background: color, borderRadius: "50%" }}
+    >
+      {initials(name)}
+    </span>
+  );
+}
+
 export default function Payrolls() {
   const superAdmin = isSuperAdmin();
   // Staff get a read-only + download-only view — every management action
@@ -53,12 +97,7 @@ export default function Payrolls() {
     total: 0,
     total_pages: 0,
   });
-  const [lookups, setLookups] = useState({
-    users: {},
-    employees: {},
-    companies: {},
-    currencies: {},
-  });
+  const [companies, setCompanies] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
@@ -70,26 +109,13 @@ export default function Payrolls() {
   const [selectedIds, setSelectedIds] = useState([]);
   const [bulkReleasing, setBulkReleasing] = useState(false);
 
-  const loadLookups = async () => {
-    try {
-      const [users, employees, companies, currencies] = (
-        await Promise.allSettled([
-          listOptions("users"),
-          listOptions("employees"),
-          superAdmin ? listOptions("companies") : Promise.resolve([]),
-          listOptions("currencies"),
-        ])
-      ).map((r) => (r.status === "fulfilled" ? r.value : []));
-      setLookups({
-        users: byId(users),
-        employees: byId(employees),
-        companies: byId(companies),
-        currencies: byId(currencies),
-      });
-    } catch {
-      /* names just fall back to "-" */
-    }
-  };
+  // Only a super admin sees the Company column, so only they need this.
+  useEffect(() => {
+    if (!superAdmin) return;
+    listOptions("companies")
+      .then((rows) => setCompanies(byId(rows)))
+      .catch(() => {});
+  }, [superAdmin]);
 
   const fetchPayrolls = async (page = 1) => {
     try {
@@ -110,55 +136,47 @@ export default function Payrolls() {
   };
 
   useEffect(() => {
-    loadLookups();
-  }, []);
-
-  useEffect(() => {
     fetchPayrolls(1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [statusFilter]);
 
+  // Everything comes from the list response; only the company name needs
+  // the (super admin) lookup.
   const view = (p) => {
-    const employee =
-      typeof p.employeeId === "object"
-        ? p.employeeId
-        : lookups.employees[p.employeeId];
-    const user =
-      typeof employee?.userId === "object"
-        ? employee.userId
-        : lookups.users[employee?.userId];
+    const emp = p.employee || null;
     const company =
-      typeof p.companyId === "object"
-        ? p.companyId
-        : lookups.companies[p.companyId];
-    const currency =
-      typeof p.currencyId === "object"
-        ? p.currencyId
-        : lookups.currencies[p.currencyId];
+      typeof p.companyId === "object" ? p.companyId : companies[p.companyId];
+    const code = p.currency?.code || "";
     return {
-      employeeName: fullName(user) || "-",
+      employeeName: p.employeeName || emp?.name || "-",
+      email: emp?.email || "",
+      department: emp?.department || "",
+      designation: emp?.designation || "",
+      profileImage: p.profileImage || emp?.profileImage || null,
       company: company?.legalName || "-",
-      currencySymbol: currency?.symbol || "",
+      currencySymbol: p.currency?.symbol || (code ? `${code} ` : ""),
     };
   };
 
   const rows = useMemo(
     () => payrolls.map((p) => ({ p, v: view(p) })),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [payrolls, lookups],
+    [payrolls, companies],
   );
 
   const filtered = rows.filter(({ v, p }) => {
     const q = search.toLowerCase();
     return (
       v.employeeName.toLowerCase().includes(q) ||
+      v.email.toLowerCase().includes(q) ||
+      v.department.toLowerCase().includes(q) ||
       v.company.toLowerCase().includes(q) ||
       p.period?.toLowerCase().includes(q)
     );
   });
 
   // Only records on the current page that are approved-and-selectable for
-  // bulk release. Selection is scoped to this page — see note below.
+  // bulk release. Selection is scoped to this page.
   const approvedRows = filtered.filter(({ p }) => p.status === "approved");
 
   const draftCount = payrolls.filter((p) => p.status === "draft").length;
@@ -359,7 +377,7 @@ export default function Payrolls() {
               <Icon name="search" size={16} />
               <input
                 type="text"
-                placeholder="Search by employee, company or period..."
+                placeholder="Search by employee, department or period..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
@@ -437,6 +455,9 @@ export default function Payrolls() {
                     {superAdmin && <th>Company</th>}
                     <th>Period</th>
                     <th>Payable Days</th>
+                    <th>Gross Pay</th>
+                    <th>Overtime</th>
+                    <th>Deductions</th>
                     <th>Net Pay</th>
                     <th>Status</th>
                     <th>Actions</th>
@@ -447,7 +468,7 @@ export default function Payrolls() {
                     <tr>
                       <td
                         colSpan={
-                          superAdmin ? (canManage ? 9 : 8) : canManage ? 8 : 7
+                          10 + (superAdmin ? 1 : 0) + (canManage ? 1 : 0)
                         }
                         className="muted"
                         style={{ textAlign: "center", padding: 28 }}
@@ -457,112 +478,148 @@ export default function Payrolls() {
                       </td>
                     </tr>
                   )}
-                  {filtered.map(({ p, v }, i) => (
-                    <tr key={p._id}>
-                      {canManage && (
+                  {filtered.map(({ p, v }, i) => {
+                    const sub = [v.department, v.designation]
+                      .filter(Boolean)
+                      .join(" · ");
+                    return (
+                      <tr key={p._id}>
+                        {canManage && (
+                          <td>
+                            {p.status === "approved" && (
+                              <input
+                                type="checkbox"
+                                checked={selectedIds.includes(p._id)}
+                                onChange={() => toggleSelect(p._id)}
+                              />
+                            )}
+                          </td>
+                        )}
+                        <td>{p.id_int ?? from + i}</td>
                         <td>
-                          {p.status === "approved" && (
-                            <input
-                              type="checkbox"
-                              checked={selectedIds.includes(p._id)}
-                              onChange={() => toggleSelect(p._id)}
+                          <div className="company-cell">
+                            <PersonAvatar
+                              key={v.profileImage || p._id}
+                              name={v.employeeName}
+                              profileImage={v.profileImage}
+                              color={AVATAR_COLORS[i % AVATAR_COLORS.length]}
                             />
+                            <div>
+                              <div style={{ fontWeight: 500 }}>
+                                {v.employeeName}
+                              </div>
+                              {(sub || v.email) && (
+                                <div
+                                  className="muted"
+                                  style={{ fontSize: 12, fontWeight: 400 }}
+                                >
+                                  {sub || v.email}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </td>
+                        {superAdmin && <td>{v.company}</td>}
+                        <td>{p.period}</td>
+                        <td>{p.payableDays}</td>
+                        <td>{money(p.grossPay, v.currencySymbol)}</td>
+                        <td>{money(p.overtimePay, v.currencySymbol)}</td>
+                        <td>{money(p.deductions, v.currencySymbol)}</td>
+                        <td style={{ fontWeight: 600 }}>
+                          {money(p.netPay, v.currencySymbol)}
+                        </td>
+                        <td>
+                          <span
+                            className={`badge ${statusBadge[p.status] || "warning"}`}
+                          >
+                            {p.status}
+                          </span>
+                          {p.approvedByName && (
+                            <div
+                              className="muted"
+                              style={{ fontSize: 11.5, marginTop: 4 }}
+                            >
+                              by {p.approvedByName}
+                            </div>
                           )}
                         </td>
-                      )}
-                      <td>{p.id_int ?? from + i}</td>
-                      <td>
-                        <div className="company-cell">
-                          <span
-                            className="co-avatar"
+                        <td>
+                          <div
                             style={{
-                              background: "#3b82f6",
-                              borderRadius: "50%",
+                              display: "flex",
+                              gap: 8,
+                              flexWrap: "wrap",
                             }}
                           >
-                            {initials(v.employeeName)}
-                          </span>
-                          <span>{v.employeeName}</span>
-                        </div>
-                      </td>
-                      {superAdmin && <td>{v.company}</td>}
-                      <td>{p.period}</td>
-                      <td>{p.payableDays}</td>
-                      <td>{money(p.netPay, v.currencySymbol)}</td>
-                      <td>
-                        <span
-                          className={`badge ${statusBadge[p.status] || "warning"}`}
-                        >
-                          {p.status}
-                        </span>
-                      </td>
-                      <td>
-                        <div
-                          style={{ display: "flex", gap: 8, flexWrap: "wrap" }}
-                        >
-                          {canManage && p.status !== "released" && (
-                            <button
-                              className="btn btn-sm"
-                              onClick={() => setDeductionPayroll(p)}
-                            >
-                              <Icon name="dollar" size={13} /> Deductions
-                            </button>
-                          )}
-                          {canManage && p.status === "draft" && (
-                            <>
+                            {canManage && p.status !== "released" && (
                               <button
                                 className="btn btn-sm"
-                                onClick={() => openEdit(p)}
+                                onClick={() => setDeductionPayroll(p)}
                               >
-                                <Icon name="edit" size={13} /> Edit
+                                <Icon name="dollar" size={13} /> Deductions
                               </button>
+                            )}
+                            {canManage && p.status === "draft" && (
+                              <>
+                                <button
+                                  className="btn btn-sm"
+                                  onClick={() => openEdit(p)}
+                                >
+                                  <Icon name="edit" size={13} /> Edit
+                                </button>
+                                <button
+                                  className="btn btn-sm"
+                                  disabled={busyId === p._id}
+                                  onClick={() => handleApprove(p)}
+                                >
+                                  <Icon name="chevronRight" size={13} /> Approve
+                                </button>
+                                <button
+                                  className="btn btn-sm btn-danger"
+                                  onClick={() =>
+                                    handleDelete(p, v.employeeName)
+                                  }
+                                >
+                                  <Icon name="trash" size={14} /> Delete
+                                </button>
+                              </>
+                            )}
+                            {canManage && p.status === "approved" && (
                               <button
-                                className="btn btn-sm"
+                                className="btn btn-sm primary"
                                 disabled={busyId === p._id}
-                                onClick={() => handleApprove(p)}
+                                onClick={() => handleRelease(p)}
                               >
-                                <Icon name="chevronRight" size={13} /> Approve
+                                <Icon name="chevronRight" size={13} /> Release
                               </button>
+                            )}
+                            {p.status === "released" && (
                               <button
-                                className="btn btn-sm btn-danger"
-                                onClick={() => handleDelete(p, v.employeeName)}
+                                className="btn btn-sm primary"
+                                disabled={busyId === p._id}
+                                onClick={() => handleDownloadPayslip(p)}
                               >
-                                <Icon name="trash" size={14} /> Delete
+                                <Icon name="fileText" size={13} />{" "}
+                                {busyId === p._id
+                                  ? "Preparing..."
+                                  : "Download Payslip"}
                               </button>
-                            </>
-                          )}
-                          {canManage && p.status === "approved" && (
-                            <button
-                              className="btn btn-sm primary"
-                              disabled={busyId === p._id}
-                              onClick={() => handleRelease(p)}
-                            >
-                              <Icon name="chevronRight" size={13} /> Release
-                            </button>
-                          )}
-                          {p.status === "released" && (
-                            <button
-                              className="btn btn-sm primary"
-                              disabled={busyId === p._id}
-                              onClick={() => handleDownloadPayslip(p)}
-                            >
-                              <Icon name="fileText" size={13} />{" "}
-                              {busyId === p._id
-                                ? "Preparing..."
-                                : "Download Payslip"}
-                            </button>
-                          )}
-                          {!canManage && p.status !== "released" && (
-                            <span className="muted" style={{ fontSize: 12.5 }}>
-                              {p.status === "draft"
-                                ? "Awaiting processing"
-                                : "Awaiting release"}
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                            )}
+                            {!canManage && p.status !== "released" && (
+                              <span
+                                className="muted"
+                                style={{ fontSize: 12.5 }}
+                              >
+                                {p.status === "draft"
+                                  ? "Awaiting processing"
+                                  : "Awaiting release"}
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -582,13 +639,13 @@ export default function Payrolls() {
                 {Array.from(
                   { length: pagination.total_pages || 1 },
                   (_, n) => n + 1,
-                ).map((p) => (
+                ).map((pg) => (
                   <button
-                    key={p}
-                    className={p === pagination.page ? "active" : ""}
-                    onClick={() => fetchPayrolls(p)}
+                    key={pg}
+                    className={pg === pagination.page ? "active" : ""}
+                    onClick={() => fetchPayrolls(pg)}
                   >
-                    {p}
+                    {pg}
                   </button>
                 ))}
                 <button

@@ -3,15 +3,84 @@ import { Icon } from "../components/Icon";
 import { isSuperAdmin } from "../utils/auth";
 import StatCard from "../components/StatCard";
 import StatutoryDetailFormModal from "../components/StatutoryDetailFormModal";
-import { listOptions } from "../services/employeeService";
+import { FILE_BASE } from "../config";
 import {
   getStatutoryDetails,
   deleteStatutoryDetail,
 } from "../services/statutoryDetailService";
 
-const idOf = (v) => v?._id || v || "";
-const fullName = (u) => (u ? `${u.firstName} ${u.lastName || ""}`.trim() : "");
-const byId = (rows) => Object.fromEntries(rows.map((r) => [r._id, r]));
+const AVATAR_COLORS = [
+  "#3b82f6",
+  "#10b981",
+  "#0ea5e9",
+  "#f97316",
+  "#14b8a6",
+  "#ec4899",
+  "#22c55e",
+  "#64748b",
+  "#7c3aed",
+  "#06b6d4",
+];
+
+const initials = (name = "") =>
+  name
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((w) => w[0])
+    .join("")
+    .toUpperCase() || "?";
+
+// Photo if there is one, otherwise coloured initials. Falls back to the
+// initials if the image fails to load.
+function PersonAvatar({ name, profileImage, color, size = 34 }) {
+  const [failed, setFailed] = useState(false);
+
+  if (profileImage && !failed) {
+    return (
+      <img
+        src={`${FILE_BASE}${profileImage}`}
+        alt={name}
+        onError={() => setFailed(true)}
+        style={{
+          width: size,
+          height: size,
+          borderRadius: "50%",
+          objectFit: "cover",
+          flexShrink: 0,
+        }}
+      />
+    );
+  }
+
+  return (
+    <span
+      className="co-avatar"
+      style={{ background: color, borderRadius: "50%" }}
+    >
+      {initials(name)}
+    </span>
+  );
+}
+
+// Everything comes from the list response; the nested populated objects are
+// kept as a fallback.
+const view = (d) => {
+  const emp = typeof d.employeeId === "object" ? d.employeeId : null;
+  const user = emp && typeof emp.userId === "object" ? emp.userId : null;
+  const company = typeof d.companyId === "object" ? d.companyId : null;
+  const nestedName = user
+    ? `${user.firstName} ${user.lastName || ""}`.trim()
+    : "";
+  return {
+    employeeName: d.employeeName || nestedName || "-",
+    email: d.email || user?.email || "",
+    department: d.department || emp?.departmentId?.name || "",
+    designation: d.designation || emp?.designationId?.name || "",
+    profileImage: d.profileImage || user?.profileImage || null,
+    company: d.companyName || company?.legalName || company?.tradeName || "-",
+  };
+};
 
 export default function StatutoryDetails() {
   const superAdmin = isSuperAdmin();
@@ -22,35 +91,11 @@ export default function StatutoryDetails() {
     total: 0,
     total_pages: 0,
   });
-  const [lookups, setLookups] = useState({
-    users: {},
-    employees: {},
-    companies: {},
-  });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
   const [modalMode, setModalMode] = useState(null);
   const [selected, setSelected] = useState(null);
-
-  const loadLookups = async () => {
-    try {
-      const [users, employees, companies] = (
-        await Promise.allSettled([
-          listOptions("users"),
-          listOptions("employees"),
-          superAdmin ? listOptions("companies") : Promise.resolve([]),
-        ])
-      ).map((r) => (r.status === "fulfilled" ? r.value : []));
-      setLookups({
-        users: byId(users),
-        employees: byId(employees),
-        companies: byId(companies),
-      });
-    } catch {
-      /* names just fall back to "-" */
-    }
-  };
 
   const fetchDetails = async (page = 1) => {
     try {
@@ -67,42 +112,20 @@ export default function StatutoryDetails() {
   };
 
   useEffect(() => {
-    loadLookups();
-  }, []);
-
-  useEffect(() => {
     fetchDetails(1);
   }, []);
 
-  const view = (d) => {
-    const employee =
-      typeof d.employeeId === "object"
-        ? d.employeeId
-        : lookups.employees[d.employeeId];
-    const user =
-      typeof employee?.userId === "object"
-        ? employee.userId
-        : lookups.users[employee?.userId];
-    const company =
-      typeof d.companyId === "object"
-        ? d.companyId
-        : lookups.companies[d.companyId];
-    return {
-      employeeName: fullName(user) || "-",
-      company: company?.legalName || "-",
-    };
-  };
-
   const rows = useMemo(
     () => details.map((d) => ({ d, v: view(d) })),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [details, lookups],
+    [details],
   );
 
   const filtered = rows.filter(({ d, v }) => {
     const q = search.toLowerCase();
     return (
       v.employeeName.toLowerCase().includes(q) ||
+      v.email.toLowerCase().includes(q) ||
+      v.department.toLowerCase().includes(q) ||
       v.company.toLowerCase().includes(q) ||
       d.panNumber?.toLowerCase().includes(q) ||
       d.bankName?.toLowerCase().includes(q)
@@ -113,10 +136,16 @@ export default function StatutoryDetails() {
     setSelected(null);
     setModalMode("create");
   };
+
+  // The list now returns Aadhaar and the bank account number already masked.
+  // They are removed here so the form can never save a masked value back
+  // over the real one.
   const openEdit = (d) => {
-    setSelected(d);
+    const { aadhaarNumber, bankAccountNumber, ...rest } = d;
+    setSelected(rest);
     setModalMode("edit");
   };
+
   const closeModal = () => {
     setModalMode(null);
     setSelected(null);
@@ -188,7 +217,7 @@ export default function StatutoryDetails() {
               <Icon name="search" size={16} />
               <input
                 type="text"
-                placeholder="Search by employee, PAN or bank..."
+                placeholder="Search by employee, department, PAN or bank..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
@@ -212,10 +241,12 @@ export default function StatutoryDetails() {
                     <th>Employee</th>
                     {superAdmin && <th>Company</th>}
                     <th>PAN</th>
+                    <th>Aadhaar</th>
                     <th>UAN</th>
                     <th>PF Number</th>
                     <th>ESI Number</th>
                     <th>Bank</th>
+                    <th>Account No.</th>
                     <th>Actions</th>
                   </tr>
                 </thead>
@@ -223,7 +254,7 @@ export default function StatutoryDetails() {
                   {filtered.length === 0 && (
                     <tr>
                       <td
-                        colSpan={superAdmin ? 9 : 8}
+                        colSpan={superAdmin ? 11 : 10}
                         className="muted"
                         style={{ textAlign: "center", padding: 28 }}
                       >
@@ -231,34 +262,63 @@ export default function StatutoryDetails() {
                       </td>
                     </tr>
                   )}
-                  {filtered.map(({ d, v }, i) => (
-                    <tr key={d._id}>
-                      <td>{d.id_int ?? from + i}</td>
-                      <td>{v.employeeName}</td>
-                      {superAdmin && <td>{v.company}</td>}
-                      <td>{d.panNumber || "-"}</td>
-                      <td>{d.uanNumber || "-"}</td>
-                      <td>{d.pfNumber || "-"}</td>
-                      <td>{d.esiNumber || "-"}</td>
-                      <td>{d.bankName}</td>
-                      <td>
-                        <div style={{ display: "flex", gap: 8 }}>
-                          <button
-                            className="btn btn-sm"
-                            onClick={() => openEdit(d)}
-                          >
-                            <Icon name="edit" size={13} /> Edit
-                          </button>
-                          <button
-                            className="btn btn-sm btn-danger"
-                            onClick={() => handleDelete(d, v.employeeName)}
-                          >
-                            <Icon name="trash" size={14} /> Delete
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                  {filtered.map(({ d, v }, i) => {
+                    const sub = [v.department, v.designation]
+                      .filter(Boolean)
+                      .join(" · ");
+                    return (
+                      <tr key={d._id}>
+                        <td>{d.id_int ?? from + i}</td>
+                        <td>
+                          <div className="company-cell">
+                            <PersonAvatar
+                              key={v.profileImage || d._id}
+                              name={v.employeeName}
+                              profileImage={v.profileImage}
+                              color={AVATAR_COLORS[i % AVATAR_COLORS.length]}
+                            />
+                            <div>
+                              <div style={{ fontWeight: 500 }}>
+                                {v.employeeName}
+                              </div>
+                              {(sub || v.email) && (
+                                <div
+                                  className="muted"
+                                  style={{ fontSize: 12, fontWeight: 400 }}
+                                >
+                                  {sub || v.email}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </td>
+                        {superAdmin && <td>{v.company}</td>}
+                        <td>{d.panNumber || "-"}</td>
+                        <td>{d.aadhaarNumber || "-"}</td>
+                        <td>{d.uanNumber || "-"}</td>
+                        <td>{d.pfNumber || "-"}</td>
+                        <td>{d.esiNumber || "-"}</td>
+                        <td>{d.bankName || "-"}</td>
+                        <td>{d.bankAccountNumber || "-"}</td>
+                        <td>
+                          <div style={{ display: "flex", gap: 8 }}>
+                            <button
+                              className="btn btn-sm"
+                              onClick={() => openEdit(d)}
+                            >
+                              <Icon name="edit" size={13} /> Edit
+                            </button>
+                            <button
+                              className="btn btn-sm btn-danger"
+                              onClick={() => handleDelete(d, v.employeeName)}
+                            >
+                              <Icon name="trash" size={14} /> Delete
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

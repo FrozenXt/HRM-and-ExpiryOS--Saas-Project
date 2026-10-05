@@ -1,7 +1,10 @@
-import React, { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Icon } from "./Icon";
 import { useTheme } from "../context/ThemeContext";
+import NotificationBell from "./NotificationBell";
+import { FILE_BASE } from "../config";
+import { getMyProfile } from "../services/userService";
 import {
   getCurrentUser,
   saveUser,
@@ -9,7 +12,6 @@ import {
   displayName,
   displayInitials,
   roleLabel,
-  fetchCurrentUserProfile,
 } from "../utils/auth";
 
 const SunIcon = () => (
@@ -42,6 +44,33 @@ const MoonIcon = () => (
   </svg>
 );
 
+// Shows the profile photo if there is one, otherwise the initials.
+function UserAvatar({ user, size }) {
+  const style = {
+    overflow: "hidden",
+    ...(size ? { width: size, height: size } : {}),
+  };
+
+  return (
+    <div className="avatar" style={style}>
+      {user?.profileImage ? (
+        <img
+          src={`${FILE_BASE}${user.profileImage}`}
+          alt=""
+          style={{
+            width: "100%",
+            height: "100%",
+            objectFit: "cover",
+            borderRadius: "50%",
+          }}
+        />
+      ) : (
+        displayInitials(user)
+      )}
+    </div>
+  );
+}
+
 export default function Navbar({ onToggleSidebar }) {
   const { theme, toggleTheme } = useTheme();
   const navigate = useNavigate();
@@ -50,29 +79,53 @@ export default function Navbar({ onToggleSidebar }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef(null);
 
-  // The JWT only carries id/role. If we have no name yet (e.g. login didn't
-  // save the user), load the profile once and cache it.
+  // Load the full profile once on mount so profileImage and the name are
+  // always present, even if login cached the user without them.
+  //
+  // This used to call fetchCurrentUserProfile(id) -> GET /users/:id, the
+  // admin "look up any user" endpoint. For staff/hr that route is
+  // role-restricted, so the request 403'd and was swallowed by the catch
+  // below — meaning non-admin roles never picked up their saved name/photo
+  // here. GET /users/me (via getMyProfile) is the self endpoint every role
+  // can call, and it's what Profile.js already uses to save.
   useEffect(() => {
-    if (!user || user.firstName || !user.id) return;
-    fetchCurrentUserProfile(user.id)
-      .then((profile) => {
-        const full = { ...user, ...profile, id: profile._id || user.id };
+    const id = getCurrentUser()?.id;
+    if (!id) return;
+
+    getMyProfile()
+      .then((res) => {
+        const profile = res.data.data;
+        const full = {
+          ...getCurrentUser(),
+          ...profile,
+          id: profile._id || id,
+        };
         saveUser(full);
         setUser(full);
       })
       .catch(() => {
-        /* keep showing the email/role fallback */
+        /* keep showing the cached user / email fallback */
       });
-  }, [user]);
+  }, []);
+
+  // The My Profile page dispatches "user-updated" after saving a change.
+  useEffect(() => {
+    const refresh = () => setUser(getCurrentUser());
+    window.addEventListener("user-updated", refresh);
+    return () => window.removeEventListener("user-updated", refresh);
+  }, []);
 
   // Close the menu on outside click / Escape.
   useEffect(() => {
     if (!menuOpen) return;
+
     const onClick = (e) => {
-      if (menuRef.current && !menuRef.current.contains(e.target))
+      if (menuRef.current && !menuRef.current.contains(e.target)) {
         setMenuOpen(false);
+      }
     };
     const onKey = (e) => e.key === "Escape" && setMenuOpen(false);
+
     document.addEventListener("mousedown", onClick);
     document.addEventListener("keydown", onKey);
     return () => {
@@ -85,6 +138,11 @@ export default function Navbar({ onToggleSidebar }) {
     setMenuOpen(false);
     await logout();
     navigate("/login", { replace: true });
+  };
+
+  const goToProfile = () => {
+    setMenuOpen(false);
+    navigate("/profile");
   };
 
   return (
@@ -116,10 +174,7 @@ export default function Navbar({ onToggleSidebar }) {
           {theme === "light" ? <MoonIcon /> : <SunIcon />}
         </button>
 
-        <button className="icon-btn" aria-label="Notifications">
-          <Icon name="bell" size={19} />
-          <span className="notif-dot">5</span>
-        </button>
+        <NotificationBell />
 
         <div className="profile-wrap" ref={menuRef}>
           <button
@@ -129,7 +184,7 @@ export default function Navbar({ onToggleSidebar }) {
             aria-haspopup="menu"
             aria-expanded={menuOpen}
           >
-            <div className="avatar">{displayInitials(user)}</div>
+            <UserAvatar user={user} />
             <div className="profile-text">
               <div className="profile-name">{displayName(user)}</div>
               <div className="profile-role">{roleLabel(user?.role)}</div>
@@ -148,6 +203,16 @@ export default function Navbar({ onToggleSidebar }) {
                   {roleLabel(user?.role)}
                 </span>
               </div>
+
+              <button
+                type="button"
+                className="profile-menu-item"
+                onClick={goToProfile}
+                role="menuitem"
+              >
+                <Icon name="users" size={14} /> My Profile
+              </button>
+
               <button
                 type="button"
                 className="profile-menu-item danger"

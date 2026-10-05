@@ -1,3 +1,4 @@
+//  // was missing — changeMyPassword threw a ReferenceError on every call
 const userRepository = require("../repositories/user.repository");
 const TenantScope = require("../helpers/tenant-scope.helper");
 
@@ -63,6 +64,78 @@ class UserService {
     }
 
     return user;
+  }
+
+  async updateProfileImage(id, file, actingUser) {
+    if (!file) {
+      throw new Error("Profile image is required");
+    }
+
+    const user = await userRepository.findById(id);
+
+    if (!user) {
+      throw new Error("User not found");
+    }
+
+    TenantScope.assertAccess(actingUser, user, "User not found");
+
+    const profileImage = `/uploads/profiles/${file.filename}`;
+
+    const updatedUser = await userRepository.update(id, {
+      profileImage,
+    });
+
+    if (!updatedUser) {
+      throw new Error("User not found");
+    }
+
+    return updatedUser;
+  }
+  async getMyProfile(actingUser) {
+    const user = await userRepository.findById(actingUser._id);
+    if (!user) throw new Error("User not found");
+    return user;
+  }
+
+  // Only these fields can ever be changed by the user themselves.
+  async updateMyProfile(actingUser, data) {
+    const allowed = {};
+    if (data.firstName !== undefined) allowed.firstName = data.firstName;
+    if (data.lastName !== undefined) allowed.lastName = data.lastName;
+
+    if (Object.keys(allowed).length === 0) {
+      const err = new Error("Nothing to update");
+      err.statusCode = 400;
+      throw err;
+    }
+    return await userRepository.update(actingUser._id, allowed);
+  }
+
+  async changeMyPassword(actingUser, currentPassword, newPassword) {
+    const fail = (msg) => {
+      const err = new Error(msg);
+      err.statusCode = 400;
+      throw err;
+    };
+
+    if (!currentPassword || !newPassword) {
+      fail("Current and new password are required");
+    }
+    if (newPassword.length < 8) {
+      fail("New password must be at least 8 characters");
+    }
+    if (currentPassword === newPassword) {
+      fail("New password must be different from the current one");
+    }
+
+    const user = await userRepository.findByIdWithPassword(actingUser._id);
+    if (!user) fail("User not found");
+
+    const ok = await bcrypt.compare(currentPassword, user.password);
+    if (!ok) fail("Current password is incorrect");
+
+    // repository.update hashes via pre-save and bumps tokenVersion
+    await userRepository.update(user._id, { password: newPassword });
   }
 
   async deleteUser(id, actingUser) {

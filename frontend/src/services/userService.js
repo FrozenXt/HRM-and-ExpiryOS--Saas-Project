@@ -42,3 +42,42 @@ export async function deleteUser(id) {
     headers: authHeaders(),
   });
 }
+
+export async function uploadProfileImage(userId, file) {
+  const formData = new FormData();
+  formData.append("profileImage", file);
+
+  const token = localStorage.getItem("accessToken");
+
+  return axios.post(`${API_BASE}/users/${userId}/profile-image`, formData, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export async function getMyProfile() {
+  return axios.get(`${API_BASE}/users/me`, { headers: authHeaders() });
+}
+
+export async function updateMyProfile(payload) {
+  return axios.patch(`${API_BASE}/users/me`, payload, {
+    headers: authHeaders(),
+  });
+}
+
+export async function changeMyPassword(currentPassword, newPassword) {
+  return axios.post(
+    `${API_BASE}/users/me/password`,
+    { currentPassword, newPassword },
+    { headers: authHeaders() },
+  );
+}
+
+// Own photo: uses /profile-image (any role), not /:id/profile-image (admin only)
+export async function uploadMyProfileImage(file) {
+  const formData = new FormData();
+  formData.append("profileImage", file);
+  const token = localStorage.getItem("accessToken");
+  return axios.post(`${API_BASE}/users/profile-image`, formData, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}

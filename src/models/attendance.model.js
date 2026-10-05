@@ -30,6 +30,8 @@ const attendanceSchema = new mongoose.Schema(
     },
     checkInLocation: { type: geoPointSchema, default: null },
     checkOutLocation: { type: geoPointSchema, default: null },
+
+    autoCheckedOut: { type: Boolean, default: false },
     geofenceId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "GeofenceZone",

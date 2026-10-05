@@ -19,6 +19,10 @@ class UserRepository {
     };
   }
 
+  async findByIdWithPassword(id) {
+    return await User.findById(id).select("+password");
+  }
+
   async findById(id) {
     return await User.findById(id);
   }

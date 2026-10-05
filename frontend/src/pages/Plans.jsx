@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getPlans } from "../services/planService";
+import { getPlans, deletePlan } from "../services/planService";
 import { Icon } from "../components/Icon";
 import PlanFormModal from "../components/PlanFormModal";
 
@@ -20,7 +20,8 @@ export default function Plans() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [statusFilter, setStatusFilter] = useState("active");
-  const [showModal, setShowModal] = useState(false);
+  const [modalMode, setModalMode] = useState(null); // "create" | "edit" | null
+  const [selectedPlan, setSelectedPlan] = useState(null);
 
   const fetchPlans = async (page = 1) => {
     try {
@@ -38,7 +39,7 @@ export default function Plans() {
         page,
         limit: 20,
         sort: "ASC",
-        sort_field: "monthlyPrice",
+        sort_field: "monthlyPricePerEmployee",
         fields,
       });
 
@@ -56,8 +57,44 @@ export default function Plans() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [statusFilter]);
 
-  const handlePlanCreated = () => {
+  const handleSaved = () => {
     fetchPlans(pagination.page);
+  };
+
+  const openCreate = () => {
+    setSelectedPlan(null);
+    setModalMode("create");
+  };
+
+  const openEdit = (plan) => {
+    setSelectedPlan(plan);
+    setModalMode("edit");
+  };
+
+  const closeModal = () => {
+    setModalMode(null);
+    setSelectedPlan(null);
+  };
+
+  const handleDelete = async (plan) => {
+    if (
+      !window.confirm(`Delete the "${plan.name}" plan? This can't be undone.`)
+    ) {
+      return;
+    }
+    try {
+      await deletePlan(plan._id);
+      fetchPlans(pagination.page);
+    } catch (err) {
+      alert(
+        err.response?.data?.message || err.message || "Failed to delete plan",
+      );
+    }
+  };
+
+  const priceLabel = (plan) => {
+    if (plan.isCustomPricing) return "Custom pricing";
+    return `NPR ${plan.monthlyPricePerEmployee}/employee/mo`;
   };
 
   return (
@@ -74,7 +111,7 @@ export default function Plans() {
         <button
           className="quick-btn blue"
           style={{ width: "auto", flexDirection: "row", gap: 8 }}
-          onClick={() => setShowModal(true)}
+          onClick={openCreate}
         >
           <Icon name="plusCircle" size={17} />
           <span>Add Plan</span>
@@ -118,7 +155,7 @@ export default function Plans() {
                     <th>#</th>
                     <th>Plan Name</th>
                     <th>Employee Limit</th>
-                    <th>Monthly Price</th>
+                    <th>Price</th>
                     <th>Features</th>
                     <th>Status</th>
                     <th>Actions</th>
@@ -129,8 +166,12 @@ export default function Plans() {
                     <tr key={p._id}>
                       <td>{p.id_int ?? i + 1}</td>
                       <td className="company-name">{p.name}</td>
-                      <td>{p.employeeLimit} employees</td>
-                      <td>${p.monthlyPrice.toLocaleString()}/mo</td>
+                      <td>
+                        {p.maxEmployees
+                          ? `${p.maxEmployees} employees`
+                          : "Unlimited"}
+                      </td>
+                      <td>{priceLabel(p)}</td>
                       <td>
                         <div
                           style={{ display: "flex", gap: 6, flexWrap: "wrap" }}
@@ -155,10 +196,18 @@ export default function Plans() {
                       </td>
                       <td>
                         <div style={{ display: "flex", gap: 6 }}>
-                          <button className="more-btn" title="Edit">
+                          <button
+                            className="more-btn"
+                            title="Edit"
+                            onClick={() => openEdit(p)}
+                          >
                             <Icon name="edit" size={15} />
                           </button>
-                          <button className="more-btn" title="Delete">
+                          <button
+                            className="more-btn"
+                            title="Delete"
+                            onClick={() => handleDelete(p)}
+                          >
                             <Icon name="trash" size={16} />
                           </button>
                         </div>
@@ -193,10 +242,12 @@ export default function Plans() {
         )}
       </section>
 
-      {showModal && (
+      {modalMode && (
         <PlanFormModal
-          onClose={() => setShowModal(false)}
-          onCreated={handlePlanCreated}
+          mode={modalMode}
+          plan={selectedPlan}
+          onClose={closeModal}
+          onSaved={handleSaved}
         />
       )}
     </>

@@ -13,8 +13,8 @@ function authHeaders() {
 export async function getPlans({
   page = 1,
   limit = 20,
-  sort = "ASC",
-  sort_field = "monthlyPrice",
+  sort = "DESC",
+  sort_field = "createdAt",
   fields = [],
 }) {
   return axios.post(
@@ -24,16 +24,22 @@ export async function getPlans({
   );
 }
 
-export async function createPlan({
-  name,
-  employeeLimit,
-  features,
-  monthlyPrice,
-  isActive,
-}) {
-  return axios.post(
-    `${API_BASE}/plans`,
-    { name, employeeLimit, features, monthlyPrice, isActive },
-    { headers: authHeaders() },
-  );
+// Open to any authenticated role — used by the company-admin subscribe/
+// upgrade screen to browse what's available.
+export async function getActivePlans() {
+  return axios.get(`${API_BASE}/plans/active`, { headers: authHeaders() });
+}
+
+export async function createPlan(payload) {
+  return axios.post(`${API_BASE}/plans`, payload, { headers: authHeaders() });
+}
+
+export async function updatePlan(id, payload) {
+  return axios.put(`${API_BASE}/plans/${id}`, payload, {
+    headers: authHeaders(),
+  });
+}
+
+export async function deletePlan(id) {
+  return axios.delete(`${API_BASE}/plans/${id}`, { headers: authHeaders() });
 }

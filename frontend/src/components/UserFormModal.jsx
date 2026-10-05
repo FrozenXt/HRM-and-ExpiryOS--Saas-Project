@@ -1,12 +1,16 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Icon } from "./Icon";
-import { createUser, updateUser } from "../services/userService";
+import {
+  createUser,
+  updateUser,
+  uploadProfileImage,
+} from "../services/userService";
 import { isSuperAdmin } from "../utils/auth";
 
 const ALL_ROLES = ["super_admin", "admin", "hr", "staff"];
-const COMPANY_ROLES = ["admin", "hr", "staff"]; // what a company admin may assign
+const COMPANY_ROLES = ["admin", "hr", "staff"];
 const STATUS_OPTIONS = ["active", "inactive"];
-
+const FILE_BASE = "http://localhost:5000";
 const ROLE_LABELS = {
   super_admin: "Super Admin",
   admin: "Admin",
@@ -37,19 +41,22 @@ export default function UserFormModal({
   const isEdit = mode === "edit";
   const superAdmin = isSuperAdmin();
 
-  // Company admins can never hand out the super_admin role.
   const roleOptions = superAdmin ? ALL_ROLES : COMPANY_ROLES;
 
   const [form, setForm] = useState(() => {
     if (!isEdit || !user) {
-      return { ...emptyForm, role: superAdmin ? "admin" : "hr" };
+      return {
+        ...emptyForm,
+        role: superAdmin ? "admin" : "hr",
+      };
     }
+
     return {
       ...emptyForm,
       firstName: user.firstName || "",
       lastName: user.lastName || "",
       email: user.email || "",
-      password: "", // left blank unless the admin wants to reset it
+      password: "",
       role: user.role || "hr",
       companyId: idOf(user.companyId),
       status: user.status || "active",
@@ -57,18 +64,74 @@ export default function UserFormModal({
     };
   });
 
+  // Profile image state
+  const [profileImage, setProfileImage] = useState(null);
+
+  const [profilePreview, setProfilePreview] = useState(
+    user?.profileImage ? `${FILE_BASE}${user.profileImage}` : null,
+  );
+
+  const fileInputRef = useRef(null);
+
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
 
   const set = (key) => (e) => {
     const value =
       e.target.type === "checkbox" ? e.target.checked : e.target.value;
-    setForm((f) => ({ ...f, [key]: value }));
+
+    setForm((f) => ({
+      ...f,
+      [key]: value,
+    }));
   };
 
-  // A super_admin belongs to no company; everyone else needs one.
   const isSuperAdminRole = form.role === "super_admin";
+
   const showCompany = superAdmin && !isSuperAdminRole;
+
+  // Profile image selection
+  const handleProfileImageChange = (e) => {
+    const file = e.target.files?.[0];
+
+    if (!file) {
+      return;
+    }
+
+    setError("");
+
+    // Validate type
+    const allowedTypes = ["image/jpeg", "image/png", "image/webp"];
+
+    if (!allowedTypes.includes(file.type)) {
+      setError("Please select a JPG, PNG or WebP image.");
+      return;
+    }
+
+    // Validate size - 5MB
+    if (file.size > 5 * 1024 * 1024) {
+      setError("Profile image must be smaller than 5MB.");
+      return;
+    }
+
+    setProfileImage(file);
+
+    // Create preview
+    const previewUrl = URL.createObjectURL(file);
+    setProfilePreview(previewUrl);
+  };
+
+  const removeProfileImage = () => {
+    setProfileImage(null);
+
+    // If editing and existing image exists,
+    // keep the existing image unless backend supports deletion.
+    setProfilePreview(user?.profileImage || null);
+
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -78,10 +141,12 @@ export default function UserFormModal({
       setError("First name, last name and email are required.");
       return;
     }
+
     if (!isEdit && showCompany && !form.companyId) {
       setError("Please select a company.");
       return;
     }
+
     if (!isEdit && !form.password) {
       setError("Password is required when creating a user.");
       return;
@@ -95,17 +160,33 @@ export default function UserFormModal({
       status: form.status,
       mustResetPassword: form.mustResetPassword,
     };
-    // Admins: the backend puts the user in the admin's own company.
-    // Super admin role: no company at all. companyId can't change on edit.
-    if (!isEdit && showCompany) payload.companyId = form.companyId;
-    if (form.password) payload.password = form.password;
+
+    // Company can only be selected when creating
+    // a user by super admin.
+    if (!isEdit && showCompany) {
+      payload.companyId = form.companyId;
+    }
+
+    if (form.password) {
+      payload.password = form.password;
+    }
 
     try {
       setSubmitting(true);
+
+      // First create/update the normal user data
       const result = isEdit
         ? await updateUser(user._id, payload)
         : await createUser(payload);
-      onSaved(result.data.data);
+
+      const savedUser = result.data.data;
+
+      // Then upload profile image if one was selected
+      if (profileImage) {
+        await uploadProfileImage(savedUser._id, profileImage);
+      }
+
+      onSaved(savedUser);
       onClose();
     } catch (err) {
       setError(
@@ -116,15 +197,28 @@ export default function UserFormModal({
     }
   };
 
-  const inputStyle = { width: "100%", padding: "9px 12px" };
+  const inputStyle = {
+    width: "100%",
+    padding: "9px 12px",
+  };
+
   const labelStyle = {
     display: "block",
     marginBottom: 6,
     fontSize: 12.5,
     color: "var(--text-dim)",
   };
-  const fieldWrap = { marginBottom: 14 };
-  const row2 = { display: "flex", gap: 12, marginBottom: 14 };
+
+  const fieldWrap = {
+    marginBottom: 14,
+  };
+
+  const row2 = {
+    display: "flex",
+    gap: 12,
+    marginBottom: 14,
+  };
+
   const companyLabel = (c) => c.tradeName || c.legalName;
 
   return (
@@ -151,10 +245,12 @@ export default function UserFormModal({
         }}
         onClick={(e) => e.stopPropagation()}
       >
+        {/* Header */}
         <div className="panel-head">
           <h2>
             <Icon name="users" size={16} /> {isEdit ? "Edit User" : "Add User"}
           </h2>
+
           <button
             type="button"
             className="more-btn"
@@ -164,22 +260,120 @@ export default function UserFormModal({
             <Icon
               name="chevronRight"
               size={16}
-              style={{ transform: "rotate(45deg)" }}
+              style={{
+                transform: "rotate(45deg)",
+              }}
             />
           </button>
         </div>
 
         <form onSubmit={handleSubmit}>
+          {/* USER DETAILS */}
           <div
             className="nav-section-title"
-            style={{ padding: 0, marginBottom: 10 }}
+            style={{
+              padding: 0,
+              marginBottom: 10,
+            }}
           >
             User Details
           </div>
 
+          {/* PROFILE IMAGE */}
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 16,
+              padding: "12px 0 18px",
+              marginBottom: 4,
+            }}
+          >
+            {/* Avatar */}
+            <div
+              style={{
+                width: 78,
+                height: 78,
+                borderRadius: "50%",
+                overflow: "hidden",
+                background: "var(--bg-soft)",
+                border: "1px solid var(--border)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                flexShrink: 0,
+              }}
+            >
+              {profilePreview ? (
+                <img
+                  src={profilePreview}
+                  alt="Profile preview"
+                  style={{
+                    width: "100%",
+                    height: "100%",
+                    objectFit: "cover",
+                  }}
+                />
+              ) : (
+                <Icon name="users" size={30} />
+              )}
+            </div>
+
+            {/* Upload controls */}
+            <div>
+              <label style={labelStyle}>Profile Photo</label>
+
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                onChange={handleProfileImageChange}
+                style={{ display: "none" }}
+              />
+
+              <div
+                style={{
+                  display: "flex",
+                  gap: 8,
+                  alignItems: "center",
+                }}
+              >
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  {profilePreview ? "Change Photo" : "Upload Photo"}
+                </button>
+
+                {profileImage && (
+                  <button
+                    type="button"
+                    className="btn"
+                    onClick={removeProfileImage}
+                  >
+                    Remove
+                  </button>
+                )}
+              </div>
+
+              <div
+                className="muted"
+                style={{
+                  fontSize: 11.5,
+                  marginTop: 6,
+                }}
+              >
+                JPG, PNG or WebP · Maximum 5MB
+              </div>
+            </div>
+          </div>
+
+          {/* FIRST / LAST NAME */}
           <div style={row2}>
             <div style={{ flex: 1 }}>
               <label style={labelStyle}>First Name *</label>
+
               <input
                 className="search-box"
                 style={inputStyle}
@@ -187,8 +381,10 @@ export default function UserFormModal({
                 onChange={set("firstName")}
               />
             </div>
+
             <div style={{ flex: 1 }}>
               <label style={labelStyle}>Last Name *</label>
+
               <input
                 className="search-box"
                 style={inputStyle}
@@ -198,8 +394,10 @@ export default function UserFormModal({
             </div>
           </div>
 
+          {/* EMAIL */}
           <div style={fieldWrap}>
             <label style={labelStyle}>Email *</label>
+
             <input
               type="email"
               className="search-box"
@@ -210,16 +408,22 @@ export default function UserFormModal({
             />
           </div>
 
+          {/* ACCOUNT SETTINGS */}
           <div
             className="nav-section-title"
-            style={{ padding: 0, margin: "18px 0 10px" }}
+            style={{
+              padding: 0,
+              margin: "18px 0 10px",
+            }}
           >
             Account Settings
           </div>
 
+          {/* ROLE / STATUS */}
           <div style={row2}>
             <div style={{ flex: 1 }}>
               <label style={labelStyle}>Role</label>
+
               <select
                 className="search-box"
                 style={inputStyle}
@@ -233,8 +437,10 @@ export default function UserFormModal({
                 ))}
               </select>
             </div>
+
             <div style={{ flex: 1 }}>
               <label style={labelStyle}>Status</label>
+
               <select
                 className="search-box"
                 style={inputStyle}
@@ -250,9 +456,11 @@ export default function UserFormModal({
             </div>
           </div>
 
+          {/* COMPANY */}
           {showCompany && (
             <div style={fieldWrap}>
               <label style={labelStyle}>Company *</label>
+
               <select
                 className="search-box"
                 style={inputStyle}
@@ -265,6 +473,7 @@ export default function UserFormModal({
                     ? "Select a company"
                     : "Loading companies..."}
                 </option>
+
                 {companies.map((c) => (
                   <option key={c._id} value={c._id}>
                     {companyLabel(c)}
@@ -274,21 +483,27 @@ export default function UserFormModal({
             </div>
           )}
 
+          {/* SUPER ADMIN MESSAGE */}
           {superAdmin && isSuperAdminRole && (
             <p
               className="muted"
-              style={{ fontSize: 12.5, margin: "-4px 0 14px" }}
+              style={{
+                fontSize: 12.5,
+                margin: "-4px 0 14px",
+              }}
             >
               Super admins are not tied to a company.
             </p>
           )}
 
+          {/* PASSWORD */}
           <div style={fieldWrap}>
             <label style={labelStyle}>
               {isEdit ? "New Password (optional)" : "Password *"}
             </label>
+
             <input
-              type="text"
+              type="password"
               className="search-box"
               style={inputStyle}
               value={form.password}
@@ -301,6 +516,7 @@ export default function UserFormModal({
             />
           </div>
 
+          {/* RESET PASSWORD */}
           <div
             style={{
               ...fieldWrap,
@@ -315,20 +531,32 @@ export default function UserFormModal({
               checked={form.mustResetPassword}
               onChange={set("mustResetPassword")}
             />
+
             <label
               htmlFor="mustResetPassword"
-              style={{ ...labelStyle, marginBottom: 0 }}
+              style={{
+                ...labelStyle,
+                marginBottom: 0,
+              }}
             >
               Require password reset on next login
             </label>
           </div>
 
+          {/* ERROR */}
           {error && (
-            <p style={{ color: "var(--red)", fontSize: 13, marginBottom: 14 }}>
+            <p
+              style={{
+                color: "var(--red)",
+                fontSize: 13,
+                marginBottom: 14,
+              }}
+            >
               {error}
             </p>
           )}
 
+          {/* ACTIONS */}
           <div
             style={{
               display: "flex",
@@ -340,6 +568,7 @@ export default function UserFormModal({
             <button type="button" onClick={onClose} className="btn">
               Cancel
             </button>
+
             <button type="submit" disabled={submitting} className="btn primary">
               {submitting
                 ? "Saving..."

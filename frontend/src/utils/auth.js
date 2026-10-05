@@ -30,6 +30,12 @@ export function getCurrentUser() {
   return null;
 }
 
+// Stable id of the logged-in user (works whether stored as id or _id).
+export const currentUserId = () => {
+  const me = getCurrentUser();
+  return me?.id || me?._id || null;
+};
+
 // Only a known non-super-admin (admin / hr / staff) is treated as company-scoped.
 // Unknown user -> show the company field; the backend still enforces access.
 export function isSuperAdmin() {
@@ -55,13 +61,22 @@ export const displayInitials = (user) => {
 export const roleLabel = (role) => ROLE_LABELS[role] || role || "";
 
 /* ---------- session ---------- */
-export const saveUser = (user) =>
+
+// Tells the theme/branding providers that the logged-in user may have changed
+// (login or logout), so they reload instead of showing the previous user's look.
+export const notifySessionChanged = () =>
+  window.dispatchEvent(new Event("session-changed"));
+
+export const saveUser = (user) => {
   localStorage.setItem("user", JSON.stringify(user));
+  notifySessionChanged();
+};
 
 export function clearSession() {
   ["accessToken", "refreshToken", "user"].forEach((k) =>
     localStorage.removeItem(k),
   );
+  notifySessionChanged();
 }
 
 // Revokes the refresh token on the server (best effort), then clears local data.

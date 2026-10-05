@@ -15,6 +15,7 @@ const eventSchema = new mongoose.Schema(
         "work_anniversary",
         "company_event",
         "meeting",
+        "seminar",
         "other",
       ],
       required: true,

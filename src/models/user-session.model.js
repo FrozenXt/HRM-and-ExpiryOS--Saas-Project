@@ -23,6 +23,11 @@ const userSessionSchema = new mongoose.Schema(
       type: String,
       default: null,
     },
+    deviceSessionId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "DeviceSession",
+      default: null,
+    },
 
     expiresAt: {
       type: Date,

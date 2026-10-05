@@ -3,6 +3,7 @@ import { Icon } from "../components/Icon";
 import { isSuperAdmin } from "../utils/auth";
 import StatCard from "../components/StatCard";
 import EmployeeFormModal from "../components/EmployeeFormModal";
+import { FILE_BASE } from "../config";
 import {
   getEmployees,
   deleteEmployee,
@@ -44,6 +45,38 @@ const formatDate = (d) =>
     : "-";
 
 const byId = (rows) => Object.fromEntries(rows.map((r) => [r._id, r]));
+
+// Photo if there is one, otherwise the coloured initials. If the image fails
+// to load (bad path, file deleted), it falls back to the initials too.
+function EmployeeAvatar({ name, profileImage, color }) {
+  const [failed, setFailed] = useState(false);
+
+  if (profileImage && !failed) {
+    return (
+      <img
+        src={`${FILE_BASE}${profileImage}`}
+        alt={name}
+        onError={() => setFailed(true)}
+        style={{
+          width: 32,
+          height: 32,
+          borderRadius: "50%",
+          objectFit: "cover",
+          flexShrink: 0,
+        }}
+      />
+    );
+  }
+
+  return (
+    <span
+      className="co-avatar"
+      style={{ background: color, borderRadius: "50%" }}
+    >
+      {initials(name)}
+    </span>
+  );
+}
 
 export default function Employees() {
   const superAdmin = isSuperAdmin();
@@ -142,6 +175,8 @@ export default function Employees() {
       department: nameOf(dept),
       designation: nameOf(desig),
       company: comp?.legalName || "-",
+      // From the list response, with the users lookup as a fallback.
+      profileImage: e.profileImage || user?.profileImage || null,
     };
   };
 
@@ -309,16 +344,11 @@ export default function Employees() {
                       <td>{e.id_int ?? from + i}</td>
                       <td>
                         <div className="company-cell">
-                          <span
-                            className="co-avatar"
-                            style={{
-                              background:
-                                AVATAR_COLORS[i % AVATAR_COLORS.length],
-                              borderRadius: "50%",
-                            }}
-                          >
-                            {initials(v.name)}
-                          </span>
+                          <EmployeeAvatar
+                            name={v.name}
+                            profileImage={v.profileImage}
+                            color={AVATAR_COLORS[i % AVATAR_COLORS.length]}
+                          />
                           <div>
                             <div>{v.name}</div>
                             <div

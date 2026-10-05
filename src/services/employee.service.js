@@ -5,10 +5,8 @@ const userRepository = require("../repositories/user.repository");
 const departmentRepository = require("../repositories/department.repository");
 const designationRepository = require("../repositories/designation.repository");
 const PlanLimit = require("../helpers/plan-limit.helper");
-
-// Related-data models pulled in for the enriched employee detail response.
-// Path convention matches your other models — double check these against
-// your actual model files if any of these requires don't resolve.
+shiftRepository = require("../repositories/shift.repository");
+const Employee = require("../models/employee.model");
 const Attendance = require("../models/attendance.model");
 const TimeLog = require("../models/time-log.model");
 const LeaveBalance = require("../models/leave-balance.model");
@@ -16,6 +14,7 @@ const LeaveRequest = require("../models/leave-request.model");
 const SalaryStructure = require("../models/salary-structure.model");
 const Payroll = require("../models/payroll.model");
 const CompanyDocument = require("../models/company-document.model");
+const { attachProfileImage } = require("../helpers/profile-image.helper");
 
 class EmployeeService extends BaseTenantService {
   constructor() {
@@ -87,8 +86,6 @@ class EmployeeService extends BaseTenantService {
 
     TenantScope.assertAccess(actingUser, doc, this.notFoundMessage);
 
-    // userId and companyId are fixed at creation — an Employee profile
-    // doesn't get reassigned to a different User or Company via update.
     const { companyId, userId, ...safeData } = data;
 
     if (safeData.departmentId) {
@@ -108,6 +105,14 @@ class EmployeeService extends BaseTenantService {
         "designationId",
       );
     }
+    if (safeData.shiftId) {
+      await this._assertBelongsToCompany(
+        shiftRepository,
+        safeData.shiftId,
+        doc.companyId,
+        "shiftId",
+      );
+    }
 
     if (safeData.reportingManagerId) {
       if (safeData.reportingManagerId === id) {
@@ -125,8 +130,64 @@ class EmployeeService extends BaseTenantService {
     return await employeeRepository.update(id, safeData);
   }
 
+  // Lightweight list for dropdowns: active employees with name + department
+  // filled in (the normal list only returns ids).
+  async getOptions(actingUser) {
+    const filter = { status: "active" };
+
+    // admin/hr: own company only. super_admin: everything.
+    if (actingUser.role !== "super_admin") {
+      filter.companyId = actingUser.companyId;
+    }
+
+    const employees = await Employee.find(filter)
+      .select("userId departmentId designationId id_int")
+      .sort({ id_int: 1 })
+      .lean();
+
+    const unique = (key) => [
+      ...new Set(
+        employees.map((e) => e[key] && e[key].toString()).filter(Boolean),
+      ),
+    ];
+
+    // Uses the repositories' findById, once per distinct id.
+    const loadMap = async (repository, ids) => {
+      const docs = await Promise.all(ids.map((id) => repository.findById(id)));
+      return new Map(docs.filter(Boolean).map((d) => [d._id.toString(), d]));
+    };
+
+    const [users, departments, designations] = await Promise.all([
+      loadMap(userRepository, unique("userId")),
+      loadMap(departmentRepository, unique("departmentId")),
+      loadMap(designationRepository, unique("designationId")),
+    ]);
+
+    return employees.map((e) => {
+      const user = users.get(e.userId?.toString());
+      const dept = departments.get(e.departmentId?.toString());
+      const desig = designations.get(e.designationId?.toString());
+      return {
+        _id: e._id,
+        id_int: e.id_int,
+        userId: user
+          ? {
+              _id: user._id,
+              firstName: user.firstName,
+              lastName: user.lastName,
+              email: user.email,
+            }
+          : null,
+        departmentId: dept ? { _id: dept._id, name: dept.name } : null,
+        designationId: desig ? { _id: desig._id, name: desig.name } : null,
+      };
+    });
+  }
+
   async getMyProfile(actingUser) {
     const employee = await employeeRepository.findByUserId(actingUser._id);
+    const [withImage] = await attachProfileImage([employee]);
+    return withImage;
 
     if (!employee) {
       throw new Error("No employee profile found for this account");
@@ -135,12 +196,6 @@ class EmployeeService extends BaseTenantService {
     return employee;
   }
 
-  // --- Enriched detail response for GET /employees/:id ---------------------
-
-  // Sums checkIn/checkOut gaps from a list of Attendance records into total
-  // hours. Mirrors the same calculation used in attendance.service.js /
-  // payrollCalculations.js on the frontend, so the numbers here should agree
-  // with what those already show.
   _sumAttendanceHours(records) {
     let total = 0;
     for (const r of records) {
@@ -202,37 +257,29 @@ class EmployeeService extends BaseTenantService {
         ? employeeRepository.findById(employee.reportingManagerId)
         : Promise.resolve(null),
 
-      // This month's attendance.
       Attendance.find({
         employeeId: employee._id,
         date: { $gte: monthStart, $lte: monthEnd },
       }).sort({ date: -1 }),
 
-      // This month's time logs (all statuses — the totals below only sum
-      // approved ones, but the raw list shows drafts/submitted too).
       TimeLog.find({
         employeeId: employee._id,
         date: { $gte: monthStart, $lte: monthEnd },
       }).sort({ date: -1 }),
 
-      // This year's leave balances, all leave types.
       LeaveBalance.find({
         employeeId: employee._id,
         year: now.getFullYear(),
       }),
 
-      // Last 5 leave requests, most recent first.
       LeaveRequest.find({ employeeId: employee._id })
         .sort({ createdAt: -1 })
         .limit(5),
 
-      // One active salary structure per employee (schema-enforced).
       SalaryStructure.findOne({ employeeId: employee._id }),
 
-      // Last 5 payroll records, most recent period first.
       Payroll.find({ employeeId: employee._id }).sort({ period: -1 }).limit(5),
 
-      // Last 5 documents for this employee.
       CompanyDocument.find({ employeeId: employee._id })
         .sort({ createdAt: -1 })
         .limit(5),
@@ -244,7 +291,7 @@ class EmployeeService extends BaseTenantService {
 
     return {
       ...employee.toObject(),
-
+      profileImage: user?.profileImage ?? null,
       user,
       department,
       designation,

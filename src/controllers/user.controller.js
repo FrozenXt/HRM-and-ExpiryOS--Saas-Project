@@ -39,8 +39,11 @@ class UserController {
 
   async store(req, res) {
     try {
-      const user = await userService.createUser(req.body, req.user);
-
+      const data = { ...req.body };
+      if (req.file) {
+        data.profileImage = `/uploads/profiles/${req.file.filename}`;
+      }
+      const user = await userService.createUser(data, req.user);
       return successResponse(res, "User created successfully", user, 201);
     } catch (error) {
       return errorResponse(res, error.message, error.statusCode || 400);
@@ -68,6 +71,75 @@ class UserController {
       return successResponse(res, "User deleted successfully");
     } catch (error) {
       return errorResponse(res, error.message, error.statusCode || 404);
+    }
+  }
+
+  async uploadUserProfileImage(req, res) {
+    try {
+      if (!req.file) {
+        return errorResponse(res, "Profile image is required.", 400);
+      }
+
+      const user = await userService.updateProfileImage(
+        req.params.id, // target user, not req.user._id
+        req.file,
+        req.user,
+      );
+
+      return successResponse(res, "Profile image uploaded successfully", user);
+    } catch (error) {
+      return errorResponse(res, error.message, error.statusCode || 400);
+    }
+  }
+
+  // Logged-in user changes their own photo
+  async uploadProfileImage(req, res) {
+    try {
+      if (!req.file) {
+        return errorResponse(res, "Profile image is required.", 400);
+      }
+
+      const user = await userService.updateProfileImage(
+        req.user._id,
+        req.file,
+        req.user,
+      );
+
+      return successResponse(res, "Profile image uploaded successfully", user);
+    } catch (error) {
+      return errorResponse(res, error.message, error.statusCode || 400);
+    }
+  }
+
+  async getMe(req, res) {
+    try {
+      const user = await userService.getMyProfile(req.user);
+      return successResponse(res, "Profile fetched successfully", user);
+    } catch (error) {
+      return errorResponse(res, error.message, error.statusCode || 404);
+    }
+  }
+
+  async updateMe(req, res) {
+    try {
+      const user = await userService.updateMyProfile(req.user, req.body);
+      return successResponse(res, "Profile updated successfully", user);
+    } catch (error) {
+      return errorResponse(res, error.message, error.statusCode || 400);
+    }
+  }
+
+  async changePassword(req, res) {
+    try {
+      const { currentPassword, newPassword } = req.body;
+      await userService.changeMyPassword(
+        req.user,
+        currentPassword,
+        newPassword,
+      );
+      return successResponse(res, "Password changed successfully");
+    } catch (error) {
+      return errorResponse(res, error.message, error.statusCode || 400);
     }
   }
 }
