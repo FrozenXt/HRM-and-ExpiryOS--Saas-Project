@@ -68,9 +68,6 @@ function periodRangeLabel(period) {
   return `${fmt(start)} – ${fmt(end)}`;
 }
 
-// Small helper so every step can be individually time-boxed and logged —
-// makes it obvious in the console exactly which async call is the one that
-// never resolves, instead of the whole function silently hanging.
 function withTimeout(promise, ms, label) {
   return Promise.race([
     promise,

@@ -6,6 +6,7 @@ const { attachEmployeeInfo } = require("../helpers/employee-info.helper");
 const companySettingsRepository = require("../repositories/company-settings.repository");
 const Shift = require("../models/shift.model");
 const { checkWorkingDay } = require("../helpers/working-day.helper");
+const { notifyAttendanceEvent } = require("../helpers/attendance-alert.helper");
 const {
   resolveEffectiveShift,
   windowForCheckIn,
@@ -178,30 +179,34 @@ class AttendanceService {
       shift.graceMinutes,
     );
 
-    if (existing) {
-      return await attendanceRepository.update(
-        existing._id,
-        { companyId: user.companyId },
-        {
+    const saved = existing
+      ? await attendanceRepository.update(
+          existing._id,
+          { companyId: user.companyId },
+          {
+            checkIn: now,
+            checkInLocation: location || null,
+            status,
+            geofenceId,
+            isWithinGeofence,
+          },
+        )
+      : await attendanceRepository.create({
+          employeeId: employee._id,
+          companyId: user.companyId,
+          date: today,
           checkIn: now,
           checkInLocation: location || null,
           status,
           geofenceId,
           isWithinGeofence,
-        },
-      );
-    }
+        });
 
-    return await attendanceRepository.create({
-      employeeId: employee._id,
-      companyId: user.companyId,
-      date: today,
-      checkIn: now,
-      checkInLocation: location || null,
-      status,
-      geofenceId,
-      isWithinGeofence,
-    });
+    // Fire and forget: the user doesn't wait for the notifications, and a
+    // notification problem can never fail the check-in.
+    notifyAttendanceEvent({ kind: "in", user, employee, record: saved });
+
+    return saved;
   }
 
   async checkOut(user, location) {
@@ -252,7 +257,7 @@ class AttendanceService {
       policy,
     });
 
-    return await attendanceRepository.update(
+    const saved = await attendanceRepository.update(
       existing._id,
       { companyId: user.companyId },
       {
@@ -263,6 +268,10 @@ class AttendanceService {
         isWithinGeofence,
       },
     );
+
+    notifyAttendanceEvent({ kind: "out", user, employee, record: saved });
+
+    return saved;
   }
 }
 

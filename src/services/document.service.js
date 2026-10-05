@@ -6,17 +6,6 @@ const TenantScope = require("../helpers/tenant-scope.helper");
 // Fallback if a DocumentType has no configured reminder offsets.
 const DEFAULT_WARN_DAYS = 30;
 
-/**
- * A document is "expiring" once we've entered its DocumentType's largest
- * reminder window (e.g. offsets [90, 60, 30, 7, 0] -> expiring 90 days out),
- * "expired" once the date has actually passed, otherwise "valid".
- *
- * NOTE: this is computed once, at upload/re-upload time, and stored. It
- * will go stale as the calendar moves forward without anyone touching the
- * document — a scheduled sweep job (the natural home for writing
- * ExpiryReminderLog entries) should periodically recompute and update
- * `status` for documents nearing/at expiry. This API doesn't run that job.
- */
 function computeStatus(expiryDate, warnDays) {
   const now = new Date();
   const expiry = new Date(expiryDate);

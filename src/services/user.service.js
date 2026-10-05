@@ -1,8 +1,47 @@
-//  // was missing — changeMyPassword threw a ReferenceError on every call
+const bcrypt = require("bcryptjs"); // use "bcrypt" if that's what the rest of the project uses
 const userRepository = require("../repositories/user.repository");
 const TenantScope = require("../helpers/tenant-scope.helper");
+const { notify, notifyBulk, adminHrIds } = require("./notification.service");
+
+const fullName = (u) =>
+  u ? `${u.firstName} ${u.lastName || ""}`.trim() : "A user";
 
 class UserService {
+  async _notifyRegistered(newUser, actingUser) {
+    try {
+      const name = fullName(newUser);
+      const companyId = newUser.companyId || null;
+
+      await notify({
+        userId: newUser._id,
+        companyId,
+        type: "user_registered",
+        title: "Welcome aboard",
+        message: `Your account has been created. You can now sign in with ${newUser.email}.`,
+        link: "/profile",
+        entityType: "User",
+        entityId: newUser._id,
+        email: { templateCode: "generic" },
+      });
+
+      // super_admin users have no company, so there's no Admin/HR group to tell
+      if (companyId) {
+        const ids = await adminHrIds(companyId, [actingUser._id, newUser._id]);
+        await notifyBulk(ids, {
+          companyId,
+          type: "user_registered",
+          title: "New user registered",
+          message: `${fullName(actingUser)} added ${name} (${newUser.role}).`,
+          link: "/users",
+          entityType: "User",
+          entityId: newUser._id,
+        });
+      }
+    } catch (err) {
+      console.error("[user] notify failed:", err.message);
+    }
+  }
+
   async getUsers(searchHelper, actingUser) {
     const scopeFilters = TenantScope.scopeFilters(actingUser);
 
@@ -38,10 +77,14 @@ class UserService {
         ? data.companyId
         : TenantScope.resolveCompanyId(actingUser, data.companyId);
 
-    return await userRepository.create({
+    const created = await userRepository.create({
       ...data,
       companyId,
     });
+
+    await this._notifyRegistered(created, actingUser);
+
+    return created;
   }
 
   async updateUser(id, data, actingUser) {
@@ -91,6 +134,7 @@ class UserService {
 
     return updatedUser;
   }
+
   async getMyProfile(actingUser) {
     const user = await userRepository.findById(actingUser._id);
     if (!user) throw new Error("User not found");

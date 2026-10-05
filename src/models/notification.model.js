@@ -19,11 +19,13 @@ const notificationSchema = new mongoose.Schema(
     entityType: { type: String, default: null },
     entityId: { type: mongoose.Schema.Types.ObjectId, default: null },
     readAt: { type: Date, default: null },
+    expireAt: { type: Date, default: null },
   },
   { timestamps: true },
 );
 
 notificationSchema.index({ userId: 1, readAt: 1, createdAt: -1 });
+notificationSchema.index({ expireAt: 1 }, { expireAfterSeconds: 0 });
 // Old notifications clean themselves up after 90 days.
 notificationSchema.index(
   { createdAt: 1 },

@@ -8,8 +8,6 @@ class ExpenseCategoryService extends BaseTenantService {
   }
 
   async remove(id, actingUser) {
-    // Mongo has no foreign keys — check ourselves so a category can't be
-    // deleted while claims still reference it.
     const isInUse = await expenseClaimRepository.existsByCategoryId(id);
     if (isInUse) {
       const error = new Error(

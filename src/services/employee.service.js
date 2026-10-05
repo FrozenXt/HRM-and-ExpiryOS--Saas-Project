@@ -5,7 +5,7 @@ const userRepository = require("../repositories/user.repository");
 const departmentRepository = require("../repositories/department.repository");
 const designationRepository = require("../repositories/designation.repository");
 const PlanLimit = require("../helpers/plan-limit.helper");
-shiftRepository = require("../repositories/shift.repository");
+const shiftRepository = require("../repositories/shift.repository");
 const Employee = require("../models/employee.model");
 const Attendance = require("../models/attendance.model");
 const TimeLog = require("../models/time-log.model");
@@ -15,10 +15,57 @@ const SalaryStructure = require("../models/salary-structure.model");
 const Payroll = require("../models/payroll.model");
 const CompanyDocument = require("../models/company-document.model");
 const { attachProfileImage } = require("../helpers/profile-image.helper");
+const { notify, notifyBulk, adminHrIds } = require("./notification.service");
+
+const fullName = (u) =>
+  u ? `${u.firstName} ${u.lastName || ""}`.trim() : "An employee";
 
 class EmployeeService extends BaseTenantService {
   constructor() {
     super(employeeRepository, "Employee not found");
+  }
+
+  // Employee: in-app + email. Admin/HR: in-app. Never throws, so a
+  // notification problem can't make the create/update fail.
+  async _notifyDesignation(employee, designation, actingUser) {
+    try {
+      const companyId = employee.companyId?._id || employee.companyId;
+      const employeeUser = await userRepository.findById(employee.userId);
+      const name = fullName(employeeUser);
+      const title = designation?.name
+        ? `"${designation.name}"`
+        : "a new designation";
+
+      if (String(employee.userId) !== String(actingUser._id)) {
+        await notify({
+          userId: employee.userId,
+          companyId,
+          type: "designation_assigned",
+          title: "New designation",
+          message: `You have been assigned the designation ${title}.`,
+          link: "/profile",
+          entityType: "Employee",
+          entityId: employee._id,
+          email: { templateCode: "generic" },
+        });
+      }
+
+      const adminIds = await adminHrIds(companyId, [
+        actingUser._id,
+        employee.userId,
+      ]);
+      await notifyBulk(adminIds, {
+        companyId,
+        type: "designation_assigned",
+        title: "Designation assigned",
+        message: `${fullName(actingUser)} assigned the designation ${title} to ${name}.`,
+        link: "/employees",
+        entityType: "Employee",
+        entityId: employee._id,
+      });
+    } catch (err) {
+      console.error("[employee] notify failed:", err.message);
+    }
   }
 
   async _assertBelongsToCompany(repository, id, companyId, fieldLabel) {
@@ -58,7 +105,7 @@ class EmployeeService extends BaseTenantService {
       "departmentId",
     );
 
-    await this._assertBelongsToCompany(
+    const designation = await this._assertBelongsToCompany(
       designationRepository,
       data.designationId,
       companyId,
@@ -74,7 +121,11 @@ class EmployeeService extends BaseTenantService {
       );
     }
 
-    return await employeeRepository.create({ ...data, companyId });
+    const created = await employeeRepository.create({ ...data, companyId });
+
+    await this._notifyDesignation(created, designation, actingUser);
+
+    return created;
   }
 
   async update(id, data, actingUser) {
@@ -97,8 +148,9 @@ class EmployeeService extends BaseTenantService {
       );
     }
 
+    let newDesignation = null;
     if (safeData.designationId) {
-      await this._assertBelongsToCompany(
+      newDesignation = await this._assertBelongsToCompany(
         designationRepository,
         safeData.designationId,
         doc.companyId,
@@ -127,7 +179,20 @@ class EmployeeService extends BaseTenantService {
       );
     }
 
-    return await employeeRepository.update(id, safeData);
+    // Only notify when the designation actually changes.
+    const oldDesignationId = String(
+      doc.designationId?._id || doc.designationId || "",
+    );
+    const designationChanged =
+      !!newDesignation && String(newDesignation._id) !== oldDesignationId;
+
+    const updated = await employeeRepository.update(id, safeData);
+
+    if (designationChanged) {
+      await this._notifyDesignation(updated || doc, newDesignation, actingUser);
+    }
+
+    return updated;
   }
 
   // Lightweight list for dropdowns: active employees with name + department

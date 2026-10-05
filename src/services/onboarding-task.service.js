@@ -1,15 +1,14 @@
 const onboardingTaskRepository = require("../repositories/onboarding-task.repository");
 const employeeRepository = require("../repositories/employee.repository");
+const { notify, notifyBulk } = require("./notification.service");
+const User = require("../models/user.model");
+
+const fullName = (u) =>
+  u ? `${u.firstName} ${u.lastName || ""}`.trim() : "An employee";
+
+const day = (d) => new Date(d).toLocaleDateString("en-CA");
 
 class OnboardingTaskService {
-  // Staff only see/act on their own tasks (e.g. marking one complete);
-  // admin/hr see the whole company; super_admin sees all.
-  //
-  // NOTE: this does not give an assignedTo user (e.g. an IT admin doing the
-  // it_setup task) visibility into a task assigned to them for someone
-  // else's onboarding — only the task owner (employee) or company
-  // admin/hr/super_admin can see/act on it. Say the word if you want
-  // assignedTo-based visibility added too.
   async _scopeFor(user) {
     const scope = {};
     if (user.role !== "super_admin") scope.companyId = user.companyId;
@@ -25,6 +24,62 @@ class OnboardingTaskService {
     }
 
     return scope;
+  }
+
+  // Active Admin and HR users of the company, minus anyone in `skip`.
+  async _adminHrIds(companyId, skip = []) {
+    const users = await User.find({
+      companyId,
+      role: { $in: ["admin", "hr"] },
+      status: "active",
+    })
+      .select("_id")
+      .lean();
+    const skipSet = new Set(skip.map(String));
+    return users.map((u) => String(u._id)).filter((id) => !skipSet.has(id));
+  }
+
+  // Employee: in-app + email. Admin/HR: in-app. Never throws, so a
+  // notification problem can't make the task creation fail.
+  async _notifyAssigned(task, employee, actingUser) {
+    try {
+      const [employeeUser] = await Promise.all([
+        User.findById(employee.userId).select("firstName lastName").lean(),
+      ]);
+
+      const name = fullName(employeeUser);
+      const due = task.dueDate ? ` Due ${day(task.dueDate)}.` : "";
+
+      await notify({
+        userId: employee.userId,
+        companyId: task.companyId,
+        type: "onboarding_task_assigned",
+        title: "New onboarding task",
+        message: `You have a new onboarding task: ${task.taskName}.${due}`,
+        link: "/onboarding",
+        entityType: "OnboardingTask",
+        entityId: task._id,
+        email: {
+          templateCode: "generic",
+        },
+      });
+
+      const adminIds = await this._adminHrIds(task.companyId, [
+        actingUser._id,
+        employee.userId,
+      ]);
+      await notifyBulk(adminIds, {
+        companyId: task.companyId,
+        type: "onboarding_task_assigned",
+        title: "Onboarding task assigned",
+        message: `${fullName(actingUser)} assigned "${task.taskName}" to ${name}.${due}`,
+        link: "/onboarding",
+        entityType: "OnboardingTask",
+        entityId: task._id,
+      });
+    } catch (err) {
+      console.error("[onboarding] notify failed:", err.message);
+    }
   }
 
   async getAll(searchHelper, user) {
@@ -43,8 +98,6 @@ class OnboardingTaskService {
     return task;
   }
 
-  // Admin/HR/Super Admin only (enforced by route authorize) — tasks are
-  // assigned to an employee, not self-created by them.
   async create(data, user) {
     const companyId =
       user.role === "super_admin" ? data.companyId : user.companyId;
@@ -64,7 +117,22 @@ class OnboardingTaskService {
       throw err;
     }
 
-    return await onboardingTaskRepository.create({ ...data, companyId });
+    // The employee must exist and belong to the same company.
+    const employee = await employeeRepository.findById(data.employeeId);
+    if (!employee || String(employee.companyId) !== String(companyId)) {
+      const err = new Error("employeeId must belong to the same company");
+      err.statusCode = 400;
+      throw err;
+    }
+
+    const created = await onboardingTaskRepository.create({
+      ...data,
+      companyId,
+    });
+
+    await this._notifyAssigned(created, employee, user);
+
+    return created;
   }
 
   async update(id, data, user) {
@@ -82,7 +150,6 @@ class OnboardingTaskService {
     return task;
   }
 
-  // Admin/HR/Super Admin only (enforced by route authorize).
   async remove(id, user) {
     const scope = await this._scopeFor(user);
     const task = await onboardingTaskRepository.delete(id, scope);

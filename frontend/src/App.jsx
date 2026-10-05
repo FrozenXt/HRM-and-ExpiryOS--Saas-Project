@@ -44,6 +44,8 @@ import PerformanceReviews from "./pages/PerformanceReviews";
 import Shifts from "./pages/Shifts";
 import Subscriptions from "./pages/Subscriptions";
 import MySubscription from "./pages/MySubscription";
+import AdvanceSalaries from "./pages/AdvanceSalaries";
+import Resignations from "./pages/Resignations";
 
 function App() {
   return (
@@ -91,6 +93,8 @@ function App() {
         <Route path="/profile" element={<Profile />} />
         <Route path="/performance-reviews" element={<PerformanceReviews />} />
         <Route path="/shifts" element={<Shifts />} />
+        <Route path="/advance-salaries" element={<AdvanceSalaries />} />
+        <Route path="/resignations" element={<Resignations />} />
         <Route path="/subscriptions" element={<Subscriptions />} />
         {/* Company Admin — their own company's plan/usage/upgrade */}
         <Route path="/my-subscription" element={<MySubscription />} />

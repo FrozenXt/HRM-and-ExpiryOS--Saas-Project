@@ -1,16 +1,5 @@
 const TenantScope = require("../helpers/tenant-scope.helper");
 
-/**
- * Shared business logic for simple tenant-scoped CRUD collections.
- *
- * - Every read is scoped so Admin/HR only ever see their own company
- *   (Super Admin bypasses, per the isolation rule).
- * - `uniqueFields` lets a subclass declare which fields must be unique
- *   *within a company* (not globally) — e.g. two companies can each have
- *   a "Sales" department, but one company can't have two.
- * - companyId can never be changed via update, even by Super Admin —
- *   moving a record to a different tenant isn't a thing this API does.
- */
 class BaseTenantService {
   constructor(repository, notFoundMessage, uniqueFields = []) {
     this.repository = repository;

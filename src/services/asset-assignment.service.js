@@ -2,8 +2,107 @@ const assetAssignmentRepository = require("../repositories/asset-assignment.repo
 const assetRepository = require("../repositories/asset.repository");
 const employeeRepository = require("../repositories/employee.repository");
 const TenantScope = require("../helpers/tenant-scope.helper");
+const User = require("../models/user.model");
+const { notify, notifyBulk, adminHrIds } = require("./notification.service");
+
+const fullName = (u) =>
+  u ? `${u.firstName} ${u.lastName || ""}`.trim() : "An employee";
 
 class AssetAssignmentService {
+  // Employee: in-app + email. Admin/HR: in-app. Never throws, so a
+  // notification problem can't make the assignment fail.
+  async _notifyAssigned(asset, employee, assignment, actingUser) {
+    try {
+      const employeeUser = await User.findById(employee.userId)
+        .select("firstName lastName")
+        .lean();
+      const name = fullName(employeeUser);
+      const assetName = asset.name ? `"${asset.name}"` : "An asset";
+      const companyId = assignment.companyId;
+
+      if (String(employee.userId) !== String(actingUser._id)) {
+        await notify({
+          userId: employee.userId,
+          companyId,
+          type: "asset_assigned",
+          title: "Asset assigned to you",
+          message: `${assetName} has been assigned to you.`,
+          link: "/assets",
+          entityType: "AssetAssignment",
+          entityId: assignment._id,
+          email: { templateCode: "generic" },
+        });
+      }
+
+      const adminIds = await adminHrIds(companyId, [
+        actingUser._id,
+        employee.userId,
+      ]);
+      await notifyBulk(adminIds, {
+        companyId,
+        type: "asset_assigned",
+        title: "Asset assigned",
+        message: `${fullName(actingUser)} assigned ${assetName} to ${name}.`,
+        link: "/assets",
+        entityType: "AssetAssignment",
+        entityId: assignment._id,
+      });
+    } catch (err) {
+      console.error("[asset-assignment] notify failed:", err.message);
+    }
+  }
+
+  // Employee: in-app. Admin/HR: in-app. Never throws.
+  async _notifyReturned(doc, condition, actingUser) {
+    try {
+      const assetId = doc.assetId?._id || doc.assetId;
+      const employeeId = doc.employeeId?._id || doc.employeeId;
+      const [asset, employee] = await Promise.all([
+        assetRepository.findById(assetId),
+        employeeRepository.findById(employeeId),
+      ]);
+      if (!employee) return;
+
+      const employeeUser = await User.findById(employee.userId)
+        .select("firstName lastName")
+        .lean();
+      const name = fullName(employeeUser);
+      const assetName = asset?.name ? `"${asset.name}"` : "An asset";
+      const companyId = doc.companyId?._id || doc.companyId;
+      const conditionNote =
+        condition !== "good" ? ` Condition: ${condition}.` : "";
+
+      if (String(employee.userId) !== String(actingUser._id)) {
+        await notify({
+          userId: employee.userId,
+          companyId,
+          type: "asset_returned",
+          title: "Asset return recorded",
+          message: `The return of ${assetName} has been recorded.`,
+          link: "/assets",
+          entityType: "AssetAssignment",
+          entityId: doc._id,
+        });
+      }
+
+      const adminIds = await adminHrIds(companyId, [
+        actingUser._id,
+        employee.userId,
+      ]);
+      await notifyBulk(adminIds, {
+        companyId,
+        type: "asset_returned",
+        title: "Asset returned",
+        message: `${fullName(actingUser)} marked ${assetName} as returned by ${name}.${conditionNote}`,
+        link: "/assets",
+        entityType: "AssetAssignment",
+        entityId: doc._id,
+      });
+    } catch (err) {
+      console.error("[asset-assignment] notify failed:", err.message);
+    }
+  }
+
   async _getActingEmployeeId(actingUser) {
     if (actingUser.role !== "staff") return null;
     const employee = await employeeRepository.findByUserId(actingUser._id);
@@ -75,6 +174,8 @@ class AssetAssignmentService {
 
     await assetRepository.update(data.assetId, { status: "assigned" });
 
+    await this._notifyAssigned(asset, employee, created, actingUser);
+
     return await assetAssignmentRepository.findById(created._id);
   }
 
@@ -99,6 +200,8 @@ class AssetAssignmentService {
     await assetRepository.update(assetId, {
       status: condition === "good" ? "available" : "under_repair",
     });
+
+    await this._notifyReturned(doc, condition, actingUser);
 
     return await assetAssignmentRepository.findById(updated._id);
   }

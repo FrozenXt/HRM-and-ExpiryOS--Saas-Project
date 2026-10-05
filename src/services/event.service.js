@@ -1,6 +1,7 @@
 const eventRepository = require("../repositories/event.repository");
 const employeeRepository = require("../repositories/employee.repository");
 const TenantScope = require("../helpers/tenant-scope.helper");
+const { notify, notifyBulk, adminHrIds } = require("./notification.service");
 
 const VALID_TYPES = [
   "birthday",
@@ -10,7 +11,51 @@ const VALID_TYPES = [
   "other",
 ];
 
+const fullName = (u) =>
+  u ? `${u.firstName} ${u.lastName || ""}`.trim() : "Someone";
+
+const day = (d) => new Date(d).toLocaleDateString("en-CA");
+
 class EventService {
+  // Linked employee (if any): in-app. Admin/HR: in-app. Never throws, so a
+  // notification problem can't make event creation fail.
+  async _notifyCreated(event, employee, actingUser) {
+    try {
+      const companyId = event.companyId;
+      const when = event.date ? ` on ${day(event.date)}` : "";
+      const employeeUserId = employee?.userId ? String(employee.userId) : null;
+
+      if (employeeUserId && employeeUserId !== String(actingUser._id)) {
+        await notify({
+          userId: employeeUserId,
+          companyId,
+          type: "event_created",
+          title: "New event",
+          message: `An event was added for you: "${event.title}"${when}.`,
+          link: "/events",
+          entityType: "Event",
+          entityId: event._id,
+        });
+      }
+
+      const skip = [actingUser._id];
+      if (employeeUserId) skip.push(employeeUserId);
+      const adminIds = await adminHrIds(companyId, skip);
+
+      await notifyBulk(adminIds, {
+        companyId,
+        type: "event_created",
+        title: "New event",
+        message: `${fullName(actingUser)} added the event "${event.title}"${when}.`,
+        link: "/events",
+        entityType: "Event",
+        entityId: event._id,
+      });
+    } catch (err) {
+      console.error("[event] notify failed:", err.message);
+    }
+  }
+
   async getAll(searchHelper, actingUser) {
     const query = this._buildFilter(searchHelper, actingUser);
     const skip = (searchHelper.getPage() - 1) * searchHelper.getLimit();
@@ -47,8 +92,9 @@ class EventService {
     }
 
     // cross-company guard
+    let emp = null;
     if (employeeId) {
-      const emp = await employeeRepository.findById(employeeId);
+      emp = await employeeRepository.findById(employeeId);
       if (!emp || emp.companyId.toString() !== companyId.toString()) {
         throw Object.assign(
           new Error("employeeId must belong to the same company"),
@@ -57,7 +103,7 @@ class EventService {
       }
     }
 
-    return eventRepository.create({
+    const created = await eventRepository.create({
       companyId,
       type: data.type,
       title: data.title,
@@ -67,6 +113,10 @@ class EventService {
       isRecurringYearly: !!data.isRecurringYearly,
       createdBy: actingUser._id,
     });
+
+    await this._notifyCreated(created, emp, actingUser);
+
+    return created;
   }
 
   async update(id, data, actingUser) {

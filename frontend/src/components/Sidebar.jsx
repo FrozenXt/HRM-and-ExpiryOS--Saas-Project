@@ -113,6 +113,13 @@ const MANAGEMENT_GROUPS = [
         path: "/employees",
         roles: ["super_admin", "admin", "hr"],
       },
+      {
+        id: "resignations",
+        label: "Resignations",
+        icon: "userPlus",
+        path: "/resignations",
+        roles: ["super_admin", "admin", "hr", "staff"],
+      },
     ],
   },
   {
@@ -252,6 +259,13 @@ const MANAGEMENT_GROUPS = [
         label: "Payroll",
         icon: "card",
         path: "/payroll",
+        roles: ["super_admin", "admin", "hr", "staff"],
+      },
+      {
+        id: "advance-salaries",
+        label: "Advance Salary",
+        icon: "dollar",
+        path: "/advance-salaries",
         roles: ["super_admin", "admin", "hr", "staff"],
       },
       {

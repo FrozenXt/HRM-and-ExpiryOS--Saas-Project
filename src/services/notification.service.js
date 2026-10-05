@@ -239,9 +239,58 @@ const markRead = (userId, id) =>
 const markAllRead = (userId) =>
   Notification.updateMany({ userId, readAt: null }, { readAt: new Date() });
 
+// In-app only, one insert for many users. Never throws.
+async function notifyBulk(userIds, opts) {
+  try {
+    const ids = [...new Set(userIds.map(String))];
+    if (!ids.length) return;
+    const {
+      companyId = null,
+      type,
+      title,
+      message = "",
+      link = null,
+      entityType = null,
+      entityId = null,
+      expireAt = null,
+    } = opts;
+    await Notification.insertMany(
+      ids.map((userId) => ({
+        userId,
+        companyId,
+        type,
+        title,
+        message,
+        link,
+        entityType,
+        entityId,
+        expireAt,
+      })),
+      { ordered: false },
+    );
+  } catch (err) {
+    console.error("[notifyBulk] failed:", err.message);
+  }
+}
+
+async function adminHrIds(companyId, skip = []) {
+  if (!companyId) return [];
+  const users = await User.find({
+    companyId,
+    role: { $in: ["admin", "hr"] },
+    status: "active",
+  })
+    .select("_id")
+    .lean();
+  const skipSet = new Set(skip.map(String));
+  return users.map((u) => String(u._id)).filter((id) => !skipSet.has(id));
+}
+
 module.exports = {
   notify,
   notifyMany,
+  notifyBulk,
+  adminHrIds,
   processOutbox,
   list,
   unreadCount,

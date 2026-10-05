@@ -29,16 +29,11 @@ const authenticate = async (req, res, next) => {
         .json({ success: false, message: "User no longer exists" });
     }
 
-    // New: this is what actually makes tokenVersion do anything.
-    // Password change / role change / deactivation bumps tokenVersion server-side;
-    // any token minted before that bump now fails here immediately.
     if (payload.tokenVersion !== user.tokenVersion) {
-      return res
-        .status(401)
-        .json({
-          success: false,
-          message: "Session expired, please log in again",
-        });
+      return res.status(401).json({
+        success: false,
+        message: "Session expired, please log in again",
+      });
     }
 
     if (user.status !== "active") {

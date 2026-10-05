@@ -142,6 +142,9 @@ app.use("/api/v1/audit-logs", require("./routes/audit-log.routes"));
 app.use("/api/v1/dashboard", require("./routes/staff-dashboard.routes"));
 app.use("/api/v1/dashboard", require("./routes/admin-dashboard.routes"));
 app.use("/api/v1/shifts", shiftRoutes);
+app.use("/api/v1/resignations", require("./routes/resignation.routes"));
+app.use("/api/v1/transfers", require("./routes/transfer.routes"));
+app.use("/api/v1/advance-salaries", require("./routes/advance-salary.routes"));
 app.get("/", (req, res) => {
   res.json({
     success: true,
