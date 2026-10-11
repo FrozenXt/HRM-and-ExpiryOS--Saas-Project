@@ -123,6 +123,92 @@ router.post(
 );
 
 router.get("/day-status", authenticate, attendanceController.dayStatus);
+
+/**
+ * @openapi
+ * /api/v1/attendance/pin:
+ *   post:
+ *     summary: Set or reset an employee's 4-digit kiosk PIN
+ *     description: |
+ *       HR/Admin only. Sets the PIN that the employee will use on the
+ *       public kiosk endpoint (`POST /api/v1/punch`).
+ *       Scoped to the caller's company — HR of one company cannot set
+ *       PINs for another company's employees.
+ *     tags: [Attendance]
+ *     security: [{ bearerAuth: [] }]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [employeeId, pin]
+ *             properties:
+ *               employeeId:
+ *                 type: string
+ *                 example: 6abe350e3da5922a3eed51de
+ *               pin:
+ *                 type: string
+ *                 example: "1234"
+ *                 description: Exactly 4 digits
+ *     responses:
+ *       200:
+ *         description: PIN set successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 message: { type: string, example: PIN set successfully }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     employeeId: { type: string }
+ *                     pinUpdatedAt: { type: string, format: date-time }
+ *       400:
+ *         description: Missing fields or PIN is not exactly 4 digits
+ *       401:
+ *         description: Authentication required or invalid access token
+ *       403:
+ *         description: Insufficient permissions
+ *       404:
+ *         description: Employee not found, or no user account linked to this employee
+ */
+router.post(
+  "/pin",
+  authenticate,
+  authorize("admin", "hr"),
+  attendanceController.setPin,
+);
+
+router.post(
+  "/mobile-check-in",
+  authenticate,
+  authorize("admin", "hr", "staff"),
+  attendanceController.mobileCheckIn,
+);
+/**
+ * @openapi
+ * /api/v1/attendance/export:
+ *   get:
+ *     summary: Download an attendance report (Excel)
+ *     description: Monthly (year + month) or yearly (year only). Staff get their own; admin/HR can pass employeeId.
+ *     tags: [Attendance]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - { name: year, in: query, schema: { type: integer } }
+ *       - { name: month, in: query, schema: { type: integer, minimum: 1, maximum: 12 }, description: Omit for a yearly report }
+ *       - { name: employeeId, in: query, schema: { type: string }, description: Admin/HR only }
+ *     responses:
+ *       200: { description: Excel file }
+ */
+router.get(
+  "/export",
+  authenticate,
+  authorize("admin", "hr", "staff"),
+  attendanceController.exportReport,
+);
 /**
  * @openapi
  * /api/v1/attendance/{id}:
@@ -184,6 +270,7 @@ router.get(
   authorize("admin", "hr", "staff"),
   attendanceController.show,
 );
+
 router.put(
   "/:id",
   authenticate,

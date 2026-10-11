@@ -1,5 +1,6 @@
 const express = require("express");
 const authController = require("../controllers/auth.controller");
+const authenticate = require("../middlewares/auth.middleware");
 
 const router = express.Router();
 
@@ -228,5 +229,7 @@ router.post("/refresh", authController.refresh);
  *               $ref: '#/components/schemas/ErrorResponse'
  */
 router.post("/logout", authController.logout);
+
+router.post("/set-my-pin", authenticate, authController.setMyPin);
 
 module.exports = router;

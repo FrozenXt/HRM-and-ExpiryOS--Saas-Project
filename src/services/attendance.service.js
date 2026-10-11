@@ -135,7 +135,46 @@ class AttendanceService {
     return await checkWorkingDay(user.companyId);
   }
 
-  async checkIn(user, location) {
+  // HR/Admin sets or resets an employee's 4-digit kiosk PIN.
+  // Scoped to the caller's company — HR cannot set PINs for another tenant.
+  async setEmployeePin(user, employeeId, pin) {
+    if (!/^\d{4}$/.test(String(pin))) {
+      const err = new Error("PIN must be exactly 4 digits");
+      err.statusCode = 400;
+      throw err;
+    }
+
+    const employee = await employeeRepository.findById(employeeId);
+    if (!employee) {
+      const err = new Error("Employee not found");
+      err.statusCode = 404;
+      throw err;
+    }
+
+    // Tenant guard: HR/Admin of company A cannot touch company B's employees.
+    if (String(employee.companyId) !== String(user.companyId)) {
+      const err = new Error("Employee not found");
+      err.statusCode = 404;
+      throw err;
+    }
+
+    const User = require("../models/user.model");
+    const targetUser = await User.findById(employee.userId);
+    if (!targetUser) {
+      const err = new Error("No user account linked to this employee");
+      err.statusCode = 404;
+      throw err;
+    }
+
+    await targetUser.setPin(String(pin));
+
+    return {
+      employeeId: employee._id,
+      pinUpdatedAt: targetUser.pinUpdatedAt,
+    };
+  }
+
+  async checkIn(user, location, options = {}) {
     const employee = await employeeRepository.findByUserId(user._id);
     if (!employee) {
       const err = new Error("No employee profile linked to this user");
@@ -170,6 +209,13 @@ class AttendanceService {
       location,
     );
 
+    if (options.requireInsideGeofence && isWithinGeofence !== true) {
+      const err = new Error(
+        "You must be inside the workplace zone to check in",
+      );
+      err.statusCode = 400;
+      throw err;
+    }
     // Late or on time, judged against this employee's shift.
     const now = new Date();
     const { shift } = await this._shiftContext(employee, user.companyId);

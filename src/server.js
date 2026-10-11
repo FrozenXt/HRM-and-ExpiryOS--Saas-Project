@@ -5,7 +5,7 @@ console.log("Mongo URI:", process.env.MONGODB_URI);
 const app = require("./app");
 const connectDatabase = require("./config/database");
 const emailOutboxJob = require("./jobs/email-outbox.job");
-
+const backupJob = require("./jobs/backup.job");
 // Auto checkout job
 const autoCheckoutJob = require("./jobs/auto-checkout.job");
 
@@ -17,7 +17,7 @@ const startServer = async () => {
   // Start auto-checkout cron job
   autoCheckoutJob.start();
   emailOutboxJob.start();
-
+  backupJob.start();
   app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
   });

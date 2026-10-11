@@ -21,7 +21,11 @@ const userSchema = new mongoose.Schema(
       minlength: 8,
       select: false,
     },
+    pinHash: { type: String, default: null, select: false },
+    pinUpdatedAt: { type: Date, default: null },
 
+    pinFailedAttempts: { type: Number, default: 0 },
+    pinLockedUntil: { type: Date, default: null },
     // Changed: aligned to the HRMS role hierarchy instead of a generic CMS role set
     role: {
       type: String,
@@ -99,6 +103,17 @@ userSchema.pre("save", async function () {
 
   this.password = await bcrypt.hash(this.password, 12);
 });
+
+userSchema.methods.setPin = async function (plainPin) {
+  this.pinHash = await bcrypt.hash(String(plainPin), 10);
+  this.pinUpdatedAt = new Date();
+  return this.save();
+};
+
+userSchema.methods.verifyPin = async function (plainPin) {
+  if (!this.pinHash) return false;
+  return bcrypt.compare(String(plainPin), this.pinHash);
+};
 // id_int: human-friendly auto-increment number, populated atomically on
 // first save. See plugins/auto-increment.plugin.js for how/why.
 userSchema.plugin(autoIncrementId, { sequenceName: "user" });

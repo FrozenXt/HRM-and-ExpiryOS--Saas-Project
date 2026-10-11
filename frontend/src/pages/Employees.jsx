@@ -4,6 +4,7 @@ import { isSuperAdmin } from "../utils/auth";
 import StatCard from "../components/StatCard";
 import EmployeeFormModal from "../components/EmployeeFormModal";
 import { FILE_BASE } from "../config";
+import SetPinModal from "../components/SetPinModal";
 import {
   getEmployees,
   deleteEmployee,
@@ -100,7 +101,7 @@ export default function Employees() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [modalMode, setModalMode] = useState(null); // "create" | "edit" | null
   const [selected, setSelected] = useState(null);
-
+  const [pinFor, setPinFor] = useState(null); // { emp, name } | null
   // Names for ids (the employee document only stores ids).
   const loadLookups = async () => {
     try {
@@ -385,6 +386,17 @@ export default function Employees() {
                           >
                             <Icon name="edit" size={13} /> Edit
                           </button>
+
+                          {!superAdmin && (
+                            <button
+                              className="btn btn-sm"
+                              onClick={() =>
+                                setPinFor({ emp: e, name: v.name })
+                              }
+                            >
+                              <Icon name="lock" size={13} /> PIN
+                            </button>
+                          )}
                           <button
                             className="btn btn-sm btn-danger"
                             onClick={() => handleDelete(e, v.name)}
@@ -442,6 +454,14 @@ export default function Employees() {
           employee={selected}
           onClose={closeModal}
           onSaved={() => fetchEmployees(pagination.page)}
+        />
+      )}
+
+      {pinFor && (
+        <SetPinModal
+          employee={pinFor.emp}
+          name={pinFor.name}
+          onClose={() => setPinFor(null)}
         />
       )}
     </>

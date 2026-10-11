@@ -47,6 +47,18 @@ export const checkOut = (location) =>
 // The logged-in user's own employee profile (needed to find "today's record")
 export const getMyEmployee = () => axios.get(`${API_BASE}/employees/me`, h());
 
+// Returns the .xlsx as a Blob. Omit month for a yearly report.
+export const downloadAttendanceReport = ({ year, month, employeeId } = {}) =>
+  axios.get(`${API_BASE}/attendance/export`, {
+    ...h(),
+    responseType: "blob",
+    params: {
+      ...(year ? { year } : {}),
+      ...(month ? { month } : {}),
+      ...(employeeId ? { employeeId } : {}),
+    },
+  });
+
 export async function getAttendanceForPeriod(employeeId, startDate, endDate) {
   const fields = [
     { field: "employeeId", operator: "eq", value: employeeId },

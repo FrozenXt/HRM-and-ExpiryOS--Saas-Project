@@ -139,6 +139,14 @@ class EmployeeService extends BaseTenantService {
 
     const { companyId, userId, ...safeData } = data;
 
+    if (safeData.status === "inactive" && !doc.exitDate && !safeData.exitDate) {
+      safeData.exitDate = new Date();
+    }
+    if (safeData.status === "active") {
+      safeData.exitDate = null;
+      safeData.exitReason = null;
+    }
+
     if (safeData.departmentId) {
       await this._assertBelongsToCompany(
         departmentRepository,
@@ -251,14 +259,30 @@ class EmployeeService extends BaseTenantService {
 
   async getMyProfile(actingUser) {
     const employee = await employeeRepository.findByUserId(actingUser._id);
-    const [withImage] = await attachProfileImage([employee]);
-    return withImage;
 
     if (!employee) {
-      throw new Error("No employee profile found for this account");
+      const err = new Error("No employee profile found for this account");
+      err.statusCode = 404;
+      throw err;
     }
 
-    return employee;
+    const [withImage] = await attachProfileImage([employee]);
+    const base = withImage?.toObject ? withImage.toObject() : withImage;
+
+    const [department, designation] = await Promise.all([
+      departmentRepository.findById(employee.departmentId),
+      designationRepository.findById(employee.designationId),
+    ]);
+
+    return {
+      ...base,
+      department: department
+        ? { _id: department._id, name: department.name }
+        : null,
+      designation: designation
+        ? { _id: designation._id, name: designation.name }
+        : null,
+    };
   }
 
   _sumAttendanceHours(records) {

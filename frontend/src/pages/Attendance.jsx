@@ -4,6 +4,7 @@ import StatCard from "../components/StatCard";
 import AttendanceFormModal from "../components/AttendanceFormModal";
 import { useGeolocation } from "../hooks/useGeolocation";
 import { FILE_BASE } from "../config";
+import AttendanceExport from "../components/AttendanceExport";
 import { getCurrentUser } from "../utils/auth";
 import {
   getAttendance,
@@ -459,6 +460,7 @@ export default function Attendance() {
           </button>
         )}
       </div>
+      {canCheckIn && <AttendanceExport />}
 
       {/* ---------- Check-in card ---------- */}
       {canCheckIn && (

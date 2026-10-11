@@ -54,6 +54,20 @@ const employeeSchema = new mongoose.Schema(
       default: "active",
       index: true,
     },
+    gender: {
+      type: String,
+      enum: ["male", "female", "other", "prefer_not_to_say"],
+      default: null,
+    },
+    employmentType: {
+      type: String,
+      enum: ["full_time", "part_time", "contract", "intern"],
+      default: "full_time",
+    },
+    probationEndDate: { type: Date, default: null },
+    confirmationDate: { type: Date, default: null },
+    exitDate: { type: Date, default: null },
+    exitReason: { type: String, trim: true, default: null },
     dateOfBirth: { type: Date, default: null },
     personalEmail: {
       type: String,

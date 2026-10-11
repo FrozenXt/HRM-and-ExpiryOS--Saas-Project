@@ -46,6 +46,11 @@ import Subscriptions from "./pages/Subscriptions";
 import MySubscription from "./pages/MySubscription";
 import AdvanceSalaries from "./pages/AdvanceSalaries";
 import Resignations from "./pages/Resignations";
+import KioskPage from "./pages/KioskPage";
+import CompanyReport from "./pages/CompanyReport";
+import SupportTickets from "./pages/SupportTickets";
+import EmployeeReport from "./pages/EmployeeReport";
+import Backups from "./pages/Backups";
 
 function App() {
   return (
@@ -53,6 +58,8 @@ function App() {
     <Routes>
       <Route path="/" element={<Login />} />
       <Route path="/login" element={<Login />} />
+      {/* Public kiosk — full-screen, no dashboard chrome. Place a tablet at the office entrance. */}
+      <Route path="/kiosk" element={<KioskPage />} />
 
       <Route element={<DashboardLayout />}>
         <Route path="/dashboard" element={<Dashboard />} />
@@ -98,6 +105,10 @@ function App() {
         <Route path="/subscriptions" element={<Subscriptions />} />
         {/* Company Admin — their own company's plan/usage/upgrade */}
         <Route path="/my-subscription" element={<MySubscription />} />
+        <Route path="/reports/companies" element={<CompanyReport />} />
+        <Route path="/reports/employees" element={<EmployeeReport />} />
+        <Route path="/support-tickets" element={<SupportTickets />} />
+        <Route path="/backups" element={<Backups />} />
         <Route
           path="/regularization-requests"
           element={<RegularizationRequests />}

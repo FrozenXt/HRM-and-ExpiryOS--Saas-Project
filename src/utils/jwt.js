@@ -15,11 +15,11 @@ const generateAccessToken = (user) => {
   );
 };
 
-const generateRefreshToken = (user) => {
+const generateRefreshToken = (user, expiresIn = jwtConfig.refreshExpiresIn) => {
   return jwt.sign(
     { sub: user._id.toString(), type: "refresh" },
     jwtConfig.refreshSecret,
-    { expiresIn: jwtConfig.refreshExpiresIn },
+    { expiresIn },
   );
 };
 

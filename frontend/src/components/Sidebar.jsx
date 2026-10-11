@@ -63,6 +63,13 @@ const TOP_ITEMS = [
     path: "/system-settings",
     roles: ["super_admin", "admin"],
   },
+  {
+    id: "support-tickets",
+    label: "Support Tickets",
+    icon: "headphones",
+    path: "/support-tickets",
+    roles: ["super_admin", "admin", "hr", "staff"],
+  },
 ];
 
 const MANAGEMENT_GROUPS = [
@@ -155,6 +162,13 @@ const MANAGEMENT_GROUPS = [
         icon: "clock",
         path: "/attendance",
         roles: ["super_admin", "admin", "hr", "staff"],
+      },
+      {
+        id: "kiosk",
+        label: "Kiosk",
+        icon: "clock",
+        path: "/kiosk",
+        roles: ["super_admin", "admin", "hr"],
       },
       {
         id: "regularization",
@@ -364,7 +378,7 @@ const MANAGEMENT_GROUPS = [
         label: "Company Reports",
         icon: "trending",
         path: "/reports/companies",
-        roles: ["super_admin", "admin", "hr"],
+        roles: ["super_admin"],
       },
       {
         id: "employee-reports",
@@ -372,6 +386,13 @@ const MANAGEMENT_GROUPS = [
         icon: "activity",
         path: "/reports/employees",
         roles: ["super_admin", "admin", "hr"],
+      },
+      {
+        id: "Backup",
+        label: "Backup Reports",
+        icon: "activity",
+        path: "/backups",
+        roles: ["super_admin", "admin"],
       },
     ],
   },

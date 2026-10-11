@@ -50,6 +50,19 @@ class AuthController {
       return res.status(500).json({ success: false, message: error.message });
     }
   }
+
+  async setMyPin(req, res) {
+    try {
+      const { password, pin } = req.body || {};
+      await authService.setMyPin(req.user._id, password, pin);
+      return res.status(200).json({ success: true, message: "PIN saved" });
+    } catch (error) {
+      // 400/429, never 401, so the app doesn't treat a wrong password as an expired session.
+      return res
+        .status(error.statusCode || 400)
+        .json({ success: false, message: error.message });
+    }
+  }
 }
 
 module.exports = new AuthController();

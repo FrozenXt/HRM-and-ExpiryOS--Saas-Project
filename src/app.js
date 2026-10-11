@@ -50,6 +50,7 @@ const screenshotRoutes = require("./routes/screenshot.routes");
 const swaggerSpec = require("./config/swagger");
 const monitoringPolicyRoutes = require("./routes/monitoring-policy.routes");
 const shiftRoutes = require("./routes/shift.routes");
+const punchRoutes = require("./routes/punch.routes");
 
 const app = express();
 
@@ -145,6 +146,11 @@ app.use("/api/v1/shifts", shiftRoutes);
 app.use("/api/v1/resignations", require("./routes/resignation.routes"));
 app.use("/api/v1/transfers", require("./routes/transfer.routes"));
 app.use("/api/v1/advance-salaries", require("./routes/advance-salary.routes"));
+app.use("/api/v1/backups", require("./routes/backup.routes"));
+app.use("/api/v1/reports", require("./routes/report.routes"));
+app.use("/api/v1/reports", require("./routes/company-report.routes"));
+app.use("/api/v1/support-tickets", require("./routes/support-ticket.routes"));
+app.use("/api/v1/punch", punchRoutes);
 app.get("/", (req, res) => {
   res.json({
     success: true,

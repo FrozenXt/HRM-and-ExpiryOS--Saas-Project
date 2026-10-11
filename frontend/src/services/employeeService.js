@@ -53,3 +53,10 @@ export async function listOptions(resource, companyId) {
   const res = await list(resource, { limit: 100, sort: "ASC", fields });
   return res.data.data.data;
 }
+
+export const setEmployeePin = (employeeId, pin) =>
+  axios.post(
+    `${API_BASE}/attendance/pin`,
+    { employeeId, pin },
+    { headers: authHeaders() },
+  );

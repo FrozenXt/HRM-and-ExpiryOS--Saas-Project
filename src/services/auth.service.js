@@ -12,6 +12,10 @@ const {
   verifyRefreshToken,
 } = require("../utils/jwt");
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+const WEB_SESSION_DAYS = 7;
+const MOBILE_SESSION_DAYS = 90;
+
 // --- device detection helpers (best-effort, from the User-Agent) ----------
 function detectDeviceType(userAgent = "") {
   return /Mobile|Android|iPhone|iPad/i.test(userAgent) ? "mobile" : "desktop";
@@ -40,6 +44,31 @@ function fallbackDeviceId(userAgent = "") {
       .slice(0, 32)
   );
 }
+
+const pinAttempts = new Map(); // userId -> { count, resetAt } (resets on server restart)
+const MAX_PIN_ATTEMPTS = 5;
+const WEAK_PINS = new Set([
+  "0000",
+  "1111",
+  "2222",
+  "3333",
+  "4444",
+  "5555",
+  "6666",
+  "7777",
+  "8888",
+  "9999",
+  "1234",
+  "4321",
+  "0123",
+  "2580",
+]);
+
+const fail = (message, statusCode = 400) => {
+  const err = new Error(message);
+  err.statusCode = statusCode;
+  return err;
+};
 
 class AuthService {
   /**
@@ -113,12 +142,16 @@ class AuthService {
       throw new Error("Invalid email or password");
     }
 
+    // Phones stay signed in for 90 days of inactivity, browsers for 7.
+    const isMobile = deviceInfo.deviceType === "mobile";
+    const lifetimeDays = isMobile ? MOBILE_SESSION_DAYS : WEB_SESSION_DAYS;
+
     const accessToken = generateAccessToken(user);
-    const refreshToken = generateRefreshToken(user);
+    const refreshToken = generateRefreshToken(user, `${lifetimeDays}d`);
 
     const refreshTokenHash = await bcrypt.hash(refreshToken, 10);
 
-    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    const expiresAt = new Date(Date.now() + lifetimeDays * DAY_MS);
 
     const deviceSessionId = await this._startDeviceSession(
       user,
@@ -151,6 +184,7 @@ class AuthService {
         companyId: user.companyId,
         status: user.status,
         mustResetPassword: user.mustResetPassword,
+        profileImage: user.profileImage || null,
       },
       accessToken,
       refreshToken,
@@ -195,8 +229,12 @@ class AuthService {
     matchedSession.revokedAt = new Date();
     await matchedSession.save();
 
+    // Keep the same lifetime the session started with (7 or 90 days),
+    // read from the old token so no schema change is needed.
+    const lifetimeSec = payload.exp - payload.iat;
+
     const newAccessToken = generateAccessToken(user);
-    const newRefreshToken = generateRefreshToken(user);
+    const newRefreshToken = generateRefreshToken(user, lifetimeSec);
     const newHash = await bcrypt.hash(newRefreshToken, 10);
 
     await UserSession.create({
@@ -204,7 +242,7 @@ class AuthService {
       refreshTokenHash: newHash,
       ipAddress: matchedSession.ipAddress,
       userAgent: matchedSession.userAgent,
-      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+      expiresAt: new Date(Date.now() + lifetimeSec * 1000),
       // Same login, same device — a token refresh is not a new device session.
       deviceSessionId: matchedSession.deviceSessionId || null,
     });
@@ -234,6 +272,47 @@ class AuthService {
         break;
       }
     }
+  }
+
+  // The employee picks their own PIN; their account password proves it's them.
+  async setMyPin(userId, password, pin) {
+    if (!/^\d{4}$/.test(String(pin || ""))) {
+      throw fail("PIN must be exactly 4 digits");
+    }
+    if (WEAK_PINS.has(String(pin))) {
+      throw fail("That PIN is too easy to guess. Choose another.");
+    }
+    if (!password) throw fail("Password is required");
+
+    const key = String(userId);
+    const entry = pinAttempts.get(key);
+    if (
+      entry &&
+      entry.resetAt > Date.now() &&
+      entry.count >= MAX_PIN_ATTEMPTS
+    ) {
+      throw fail("Too many attempts. Try again in a few minutes.", 429);
+    }
+
+    const user = await User.findById(userId).select("+password");
+    if (!user) throw fail("User not found", 404);
+
+    if (!(await bcrypt.compare(password, user.password))) {
+      const fresh =
+        entry && entry.resetAt > Date.now()
+          ? entry
+          : { count: 0, resetAt: Date.now() + 15 * 60000 };
+      fresh.count += 1;
+      pinAttempts.set(key, fresh);
+      throw fail("Incorrect password");
+    }
+
+    pinAttempts.delete(key);
+    await user.setPin(String(pin));
+    await User.updateOne(
+      { _id: userId },
+      { $set: { pinFailedAttempts: 0, pinLockedUntil: null } },
+    );
   }
 }
 

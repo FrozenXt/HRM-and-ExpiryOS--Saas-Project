@@ -20,6 +20,10 @@ const emptyForm = {
   reportingManagerId: "",
   joiningDate: "",
   status: "active",
+  gender: "",
+  employmentType: "full_time",
+  probationEndDate: "",
+  confirmationDate: "",
   dateOfBirth: "",
   personalEmail: "",
   emergencyName: "",
@@ -48,6 +52,10 @@ export default function EmployeeFormModal({
       reportingManagerId: idOf(employee.reportingManagerId),
       joiningDate: employee.joiningDate?.slice(0, 10) || "",
       status: employee.status || "active",
+      gender: employee.gender || "",
+      employmentType: employee.employmentType || "full_time",
+      probationEndDate: employee.probationEndDate?.slice(0, 10) || "",
+      confirmationDate: employee.confirmationDate?.slice(0, 10) || "",
       dateOfBirth: employee.dateOfBirth?.slice(0, 10) || "",
       personalEmail: employee.personalEmail || "",
       emergencyName: employee.emergencyContact?.name || "",
@@ -153,12 +161,25 @@ export default function EmployeeFormModal({
       return;
     }
 
+    if (form.probationEndDate && form.probationEndDate < form.joiningDate) {
+      setError("Probation end date cannot be before the joining date.");
+      return;
+    }
+    if (form.confirmationDate && form.confirmationDate < form.joiningDate) {
+      setError("Confirmation date cannot be before the joining date.");
+      return;
+    }
+
     const payload = {
       departmentId: form.departmentId,
       designationId: form.designationId,
       reportingManagerId: form.reportingManagerId || null,
       joiningDate: form.joiningDate,
       status: form.status,
+      gender: form.gender || null,
+      employmentType: form.employmentType,
+      probationEndDate: form.probationEndDate || null,
+      confirmationDate: form.confirmationDate || null,
       dateOfBirth: form.dateOfBirth || null,
       personalEmail: form.personalEmail || null,
       emergencyContact: {
@@ -349,6 +370,51 @@ export default function EmployeeFormModal({
               {text("personalEmail", { type: "email" })}
             </Field>
           </div>
+          <Row>
+            <Field label="Gender">
+              <select
+                className="search-box"
+                style={inputStyle}
+                value={form.gender}
+                onChange={set("gender")}
+              >
+                <option value="">Not specified</option>
+                <option value="male">Male</option>
+                <option value="female">Female</option>
+                <option value="other">Other</option>
+                <option value="prefer_not_to_say">Prefer not to say</option>
+              </select>
+            </Field>
+            <Field label="Employment Type">
+              <select
+                className="search-box"
+                style={inputStyle}
+                value={form.employmentType}
+                onChange={set("employmentType")}
+              >
+                <option value="full_time">Full time</option>
+                <option value="part_time">Part time</option>
+                <option value="contract">Contract</option>
+                <option value="intern">Intern</option>
+              </select>
+            </Field>
+          </Row>
+
+          <Section title="Probation" />
+          <Row>
+            <Field label="Probation End Date">
+              {text("probationEndDate", {
+                type: "date",
+                min: form.joiningDate || undefined,
+              })}
+            </Field>
+            <Field label="Confirmation Date">
+              {text("confirmationDate", {
+                type: "date",
+                min: form.joiningDate || undefined,
+              })}
+            </Field>
+          </Row>
 
           <Section title="Emergency Contact" />
           <Row>

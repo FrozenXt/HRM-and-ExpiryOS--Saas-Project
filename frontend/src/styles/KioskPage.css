@@ -1,0 +1,236 @@
+/* pages/KioskPage.css */
+
+.kiosk-page {
+  min-height: 100vh;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 24px;
+  font-family: inherit;
+  background: #f8fafc;
+  color: #0f172a;
+  transition:
+    background 0.3s ease,
+    color 0.3s ease;
+}
+
+.kiosk-page.is-success {
+  background: #ecfdf5;
+  color: #064e3b;
+}
+
+.kiosk-page.is-error {
+  background: #fef2f2;
+  color: #7f1d1d;
+}
+
+/* ---------- clock ---------- */
+.kiosk-clock {
+  text-align: center;
+  margin-bottom: 40px;
+}
+
+.kiosk-clock-time {
+  font-size: 64px;
+  font-weight: 700;
+  letter-spacing: -1px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+
+.kiosk-clock-date {
+  font-size: 20px;
+  opacity: 0.7;
+  margin-top: 8px;
+}
+
+/* ---------- card ---------- */
+.kiosk-card {
+  width: 100%;
+  max-width: 560px;
+  background: #fff;
+  border-radius: 24px;
+  border: 2px solid #cbd5e1;
+  padding: 40px;
+  box-shadow: 0 20px 40px rgba(15, 23, 42, 0.08);
+}
+
+.kiosk-page.is-success .kiosk-card {
+  border-color: #34d399;
+}
+
+.kiosk-page.is-error .kiosk-card {
+  border-color: #f87171;
+}
+
+/* ---------- fields ---------- */
+.kiosk-label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  opacity: 0.6;
+  margin-bottom: 8px;
+}
+
+.kiosk-input {
+  width: 100%;
+  box-sizing: border-box;
+  font-size: 18px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  color: #0f172a;
+  outline: none;
+  transition:
+    border 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.kiosk-input:focus {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+}
+
+.kiosk-input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.kiosk-input-pin {
+  text-align: center;
+  font-size: 36px;
+  letter-spacing: 0.6em;
+  padding-left: 24px; /* compensate for trailing letter-spacing */
+}
+
+.kiosk-field + .kiosk-field {
+  margin-top: 24px;
+}
+
+/* ---------- buttons ---------- */
+.kiosk-buttons {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-top: 32px;
+}
+
+.kiosk-btn {
+  padding: 20px 16px;
+  border-radius: 16px;
+  border: none;
+  color: #fff;
+  font-size: 20px;
+  font-weight: 700;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    transform 0.1s ease;
+  font-family: inherit;
+}
+
+.kiosk-btn:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+.kiosk-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.kiosk-btn-in {
+  background: #059669;
+}
+.kiosk-btn-in:hover:not(:disabled) {
+  background: #047857;
+}
+
+.kiosk-btn-out {
+  background: #ea580c;
+}
+.kiosk-btn-out:hover:not(:disabled) {
+  background: #c2410c;
+}
+
+/* ---------- feedback ---------- */
+.kiosk-feedback {
+  margin-top: 32px;
+  text-align: center;
+}
+
+.kiosk-feedback-title {
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.kiosk-page.is-success .kiosk-feedback-title {
+  color: #059669;
+}
+.kiosk-page.is-error .kiosk-feedback-title {
+  color: #dc2626;
+}
+
+.kiosk-feedback-subtitle {
+  font-size: 17px;
+  margin-top: 6px;
+  opacity: 0.8;
+}
+
+.kiosk-verifying {
+  margin-top: 32px;
+  text-align: center;
+  font-size: 18px;
+  opacity: 0.6;
+}
+
+/* ---------- footer hint ---------- */
+.kiosk-hint {
+  margin-top: 32px;
+  font-size: 13px;
+  opacity: 0.5;
+  text-align: center;
+  max-width: 560px;
+}
+
+/* ---------- exit button (HR/Admin only) ---------- */
+.kiosk-exit {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  padding: 8px 16px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.85);
+  border: 1px solid #e2e8f0;
+  color: #334155;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.kiosk-exit:hover {
+  background: #fff;
+}
+
+/* ---------- responsive ---------- */
+@media (max-width: 640px) {
+  .kiosk-clock-time {
+    font-size: 48px;
+  }
+  .kiosk-card {
+    padding: 28px;
+  }
+  .kiosk-btn {
+    font-size: 18px;
+    padding: 16px 12px;
+  }
+  .kiosk-feedback-title {
+    font-size: 22px;
+  }
+}
